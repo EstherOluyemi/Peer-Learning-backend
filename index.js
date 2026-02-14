@@ -5,6 +5,8 @@ import dotenv from 'dotenv';
 import connectDB from './src/config/db.js';
 import routes from './src/routes/index.js';
 import { logger, errorHandler } from './src/middleware/errorMiddleware.js';
+import swaggerUi from 'swagger-ui-express';
+import openapiSpec from './src/docs/openapi.js';
 
 // Load environment variables
 dotenv.config();
@@ -27,6 +29,7 @@ app.use(logger);
 
 // Routes
 app.use('/api', routes);
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(openapiSpec));
 
 // Root route
 app.get('/', (req, res) => {
