@@ -387,7 +387,7 @@ export default {
       post: {
         tags: ['Learner Auth'],
         summary: 'Login as learner',
-        requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/TutorLoginRequest' } } } },
+        requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/LearnerLoginRequest' } } } },
         responses: {
           200: { description: 'Logged in', content: { 'application/json': { schema: { $ref: '#/components/schemas/SuccessResponse' } } } },
           401: { description: 'Invalid credentials', content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
