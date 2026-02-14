@@ -6,7 +6,14 @@ export default {
     description: 'OpenAPI documentation for Peer Learning System',
   },
   servers: [
-    { url: 'http://localhost:5000/api' }
+    {
+      url: 'http://localhost:5000/api',
+      description: 'Development server',
+    },
+    {
+      url: 'https://peer-learning-backend-h7x5.onrender.com/api',
+      description: 'Production server',
+    },
   ],
   tags: [
     { name: 'General' },
