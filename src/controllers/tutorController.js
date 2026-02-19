@@ -32,8 +32,10 @@ export const updateMyProfile = async (req, res) => {
 // --- Session Scheduling ---
 export const createSession = async (req, res) => {
   try {
-    const { courseId, startTime, endTime, meetingLink, maxParticipants } = req.body;
+    const { title, subject, courseId, startTime, endTime, meetingLink, maxParticipants } = req.body;
     const session = await Session.create({
+      title,
+      subject,
       courseId,
       tutorId: req.tutor._id,
       startTime,
