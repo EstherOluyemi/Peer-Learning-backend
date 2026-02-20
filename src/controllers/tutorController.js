@@ -1,3 +1,15 @@
+// Fetch a single session by ID
+export const getSession = async (req, res) => {
+  try {
+    const session = await Session.findOne({ _id: req.params.id, tutorId: req.tutor._id })
+      .populate('courseId')
+      .populate('studentIds', 'name email');
+    if (!session) return sendError(res, 'Session not found', 'SESSION_NOT_FOUND', 404);
+    return sendSuccess(res, session);
+  } catch (error) {
+    return sendError(res, error.message, 'FETCH_SESSION_FAILED', 500);
+  }
+};
 import Tutor from '../models/Tutor.js';
 import Session from '../models/Session.js';
 import User from '../models/User.js';
@@ -70,12 +82,12 @@ export const getSessions = async (req, res) => {
 
 export const updateSession = async (req, res) => {
   try {
-    const session = await Session.findOneAndUpdate(
-      { _id: req.params.id, tutorId: req.tutor._id },
-      req.body,
-      { new: true, runValidators: true }
-    );
+    const session = await Session.findOne({ _id: req.params.id, tutorId: req.tutor._id });
     if (!session) return sendError(res, 'Session not found', 'SESSION_NOT_FOUND', 404);
+    Object.keys(req.body).forEach(key => {
+      session[key] = req.body[key];
+    });
+    await session.save();
     return sendSuccess(res, session);
   } catch (error) {
     return sendError(res, error.message, 'UPDATE_SESSION_FAILED', 500);

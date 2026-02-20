@@ -5,6 +5,7 @@ import {
   updateMyProfile, 
   createSession, 
   getSessions, 
+  getSession,
   updateSession, 
   deleteSession,
   getMyStudents,
@@ -40,6 +41,7 @@ router.patch('/me', updateMyProfile);
 // Sessions
 router.post('/sessions', createSession);
 router.get('/sessions', getSessions);
+router.get('/sessions/:id', getSession);
 router.patch('/sessions/:id', updateSession);
 router.delete('/sessions/:id', deleteSession);
 
