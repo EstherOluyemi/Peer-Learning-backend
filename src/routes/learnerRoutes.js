@@ -9,7 +9,8 @@ import {
   getAssessmentDetails, 
   submitAssessment,
   getPeers,
-  sendMessage
+  sendMessage,
+  getMessages
 } from '../controllers/learnerController.js';
 import { protect } from '../middleware/authMiddleware.js';
 
@@ -43,5 +44,6 @@ router.post('/assessments/:id/submit', submitAssessment);
 // Peer Interaction
 router.get('/peers', getPeers);
 router.post('/messages', sendMessage);
+router.get('/messages/:userId', getMessages);
 
 export default router;

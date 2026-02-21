@@ -1,3 +1,73 @@
+// Get all conversations for the logged-in tutor
+export const getConversations = async (req, res) => {
+  try {
+    // Find all messages where the tutor is sender or receiver
+    const myId = req.user._id;
+    // Find all students who have messaged or been messaged by this tutor
+    const messages = await Message.find({
+      $or: [
+        { senderId: myId },
+        { receiverId: myId }
+      ]
+    }).sort({ createdAt: 1 }).populate('senderId', 'name email avatar').populate('receiverId', 'name email avatar');
+
+    // Group messages by student (other participant)
+    const conversationsMap = new Map();
+    messages.forEach(msg => {
+      // Find the student (not the tutor)
+      let student = null;
+      if (String(msg.senderId._id) !== String(myId)) student = msg.senderId;
+      if (String(msg.receiverId._id) !== String(myId)) student = msg.receiverId;
+      if (!student) return;
+      const key = String(student._id);
+      if (!conversationsMap.has(key)) {
+        conversationsMap.set(key, {
+          student,
+          messages: [],
+          lastMessage: '',
+          timestamp: '',
+          unread: 0
+        });
+      }
+      conversationsMap.get(key).messages.push({
+        id: msg._id,
+        text: msg.message,
+        sender: String(msg.senderId._id) === String(myId) ? 'tutor' : 'student',
+        timestamp: msg.createdAt,
+        read: msg.isRead
+      });
+    });
+    // Set lastMessage, timestamp, unread count
+    conversationsMap.forEach(conv => {
+      if (conv.messages.length > 0) {
+        const lastMsg = conv.messages[conv.messages.length - 1];
+        conv.lastMessage = lastMsg.text;
+        conv.timestamp = lastMsg.timestamp;
+        conv.unread = conv.messages.filter(m => !m.read && m.sender === 'student').length;
+      }
+    });
+    return sendSuccess(res, Array.from(conversationsMap.values()));
+  } catch (error) {
+    return sendError(res, error.message, 'FETCH_CONVERSATIONS_FAILED', 500);
+  }
+};
+import Message from '../models/Message.js';
+// Fetch all messages between the logged-in tutor and another user
+export const getMessages = async (req, res) => {
+  try {
+    const otherUserId = req.params.userId;
+    const myId = req.user._id;
+    const messages = await Message.find({
+      $or: [
+        { senderId: myId, receiverId: otherUserId },
+        { senderId: otherUserId, receiverId: myId }
+      ]
+    }).sort({ createdAt: 1 });
+    return sendSuccess(res, messages);
+  } catch (error) {
+    return sendError(res, error.message, 'FETCH_MESSAGES_FAILED', 500);
+  }
+};
 // Fetch a single session by ID
 export const getSession = async (req, res) => {
   try {

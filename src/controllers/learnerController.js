@@ -1,3 +1,19 @@
+// Fetch all messages between the logged-in user and another user
+export const getMessages = async (req, res) => {
+  try {
+    const otherUserId = req.params.userId;
+    const myId = req.user._id;
+    const messages = await Message.find({
+      $or: [
+        { senderId: myId, receiverId: otherUserId },
+        { senderId: otherUserId, receiverId: myId }
+      ]
+    }).sort({ createdAt: 1 });
+    return sendSuccess(res, messages);
+  } catch (error) {
+    return sendError(res, error.message, 'FETCH_MESSAGES_FAILED', 500);
+  }
+};
 import Course from '../models/Course.js';
 import Enrollment from '../models/Enrollment.js';
 import Progress from '../models/Progress.js';

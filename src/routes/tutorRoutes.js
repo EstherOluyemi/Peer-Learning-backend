@@ -8,6 +8,8 @@ import {
   getSession,
   updateSession, 
   deleteSession,
+  getMessages,
+  getConversations,
   getMyStudents,
   getStudentProgress,
   getAnalyticsOverview,
@@ -16,8 +18,8 @@ import {
   respondToReview,
   getReviewAnalytics
 } from '../controllers/tutorController.js';
-import { protect, tutorOnly } from '../middleware/authMiddleware.js';
 
+import { protect, tutorOnly } from '../middleware/authMiddleware.js';
 const router = express.Router();
 
 // Public routes
@@ -25,12 +27,17 @@ router.post('/auth/register', registerTutor);
 router.post('/auth/login', loginTutor);
 router.post('/auth/logout', logoutTutor);
 
+// Messages
+router.get('/messages', getConversations);
+router.get('/messages/:userId', getMessages);
+
 // Protected routes (Tutor only)
 router.use(protect);
 
 // Auth Me route (Protected but accessible before tutorOnly check if needed, 
-// though here it's fine after protect)
 router.get('/auth/me', getMyProfile);
+
+router.use(tutorOnly);
 
 router.use(tutorOnly);
 
