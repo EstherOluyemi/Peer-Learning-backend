@@ -20,6 +20,7 @@ import {
   respondToReview,
   getReviewAnalytics
 } from '../controllers/tutorController.js';
+import { createMeeting } from '../controllers/googleMeetController.js';
 
 import { protect, tutorOnly } from '../middleware/authMiddleware.js';
 
@@ -42,6 +43,8 @@ router.route('/messages/:userId')
 
 // --- Tutor Exclusive Routes ---
 router.use(tutorOnly);
+
+router.post('/google-meet/create-meeting', createMeeting);
 
 // Profile
 router.route('/me')

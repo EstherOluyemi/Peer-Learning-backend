@@ -23,6 +23,7 @@ export default {
     { name: 'Tutor Students' },
     { name: 'Tutor Analytics' },
     { name: 'Tutor Reviews' },
+    { name: 'Tutor Google Meet' },
     { name: 'Learner Auth' },
     { name: 'Learner Courses' },
     { name: 'Learner Progress' },
@@ -174,6 +175,33 @@ export default {
         properties: {
           moduleId: { type: 'string' }
         }
+      },
+      GoogleMeetCreateRequest: {
+        type: 'object',
+        required: ['tutorId', 'studentId', 'scheduledTime', 'meetingTitle'],
+        properties: {
+          tutorId: { type: 'string' },
+          studentId: { type: 'string' },
+          scheduledTime: { type: 'string', format: 'date-time' },
+          meetingTitle: { type: 'string' },
+          durationMinutes: { type: 'number', example: 60 }
+        },
+        example: {
+          tutorId: '64f123abc123abc123abc123',
+          studentId: '64f123abc123abc123abc124',
+          scheduledTime: '2026-02-28T10:00:00.000Z',
+          meetingTitle: 'Algebra Session',
+          durationMinutes: 60
+        }
+      },
+      GoogleMeetMeetingResponse: {
+        type: 'object',
+        properties: {
+          meetingId: { type: 'string' },
+          joinUrl: { type: 'string' },
+          startTime: { type: 'string', format: 'date-time' },
+          endTime: { type: 'string', format: 'date-time' }
+        }
       }
     }
   },
@@ -272,6 +300,33 @@ export default {
         ],
         responses: {
           200: { description: 'Sessions', content: { 'application/json': { schema: { $ref: '#/components/schemas/SuccessResponse' } } } }
+        }
+      }
+    },
+    '/v1/tutor/google-meet/create-meeting': {
+      post: {
+        tags: ['Tutor Google Meet'],
+        summary: 'Create Google Meet meeting',
+        security: [{ bearerAuth: [], cookieAuth: [] }],
+        requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/GoogleMeetCreateRequest' } } } },
+        responses: {
+          201: {
+            description: 'Meeting created',
+            content: {
+              'application/json': {
+                schema: {
+                  allOf: [
+                    { $ref: '#/components/schemas/SuccessResponse' },
+                    { type: 'object', properties: { data: { $ref: '#/components/schemas/GoogleMeetMeetingResponse' } } }
+                  ]
+                }
+              }
+            }
+          },
+          400: { description: 'Validation error', content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } } },
+          401: { description: 'Authentication failed', content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } } },
+          403: { description: 'Permission denied', content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } } },
+          429: { description: 'Quota exceeded', content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
         }
       }
     },
