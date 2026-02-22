@@ -1,12 +1,13 @@
+// src/routes/learnerRoutes.js
 import express from 'express';
 import { registerLearner, loginLearner, logoutLearner } from '../controllers/learnerAuthController.js';
-import { 
+import {
   getMyProfile,
-  getCourses, 
-  enrollInCourse, 
-  getMyProgress, 
-  updateProgress, 
-  getAssessmentDetails, 
+  getCourses,
+  enrollInCourse,
+  getMyProgress,
+  updateProgress,
+  getAssessmentDetails,
   submitAssessment,
   getPeers,
   sendMessage,
@@ -16,34 +17,43 @@ import { protect } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
-// Public routes
+// --- Public Routes ---
 router.post('/auth/register', registerLearner);
 router.post('/auth/login', loginLearner);
 router.post('/auth/logout', logoutLearner);
 
-// Course discovery (can be public or protected)
+// Course discovery (Keeping public as per your comment)
 router.get('/courses', getCourses);
 
-// Protected routes
+// --- Protected Routes (Login Required) ---
 router.use(protect);
 
-// Auth Me route
-router.get('/auth/me', getMyProfile);
+// Identity & Profile
+router.route('/me')
+  .get(getMyProfile);
 
-// Enrollment
-router.post('/courses/:id/enroll', enrollInCourse);
+// Progress Management
+router.route('/me/progress')
+  .get(getMyProgress);
 
-// Progress
-router.get('/me/progress', getMyProgress);
-router.patch('/me/progress/:courseId', updateProgress);
+router.route('/me/progress/:courseId')
+  .patch(updateProgress);
+
+// Course Interactions
+router.route('/courses/:id/enroll')
+  .post(enrollInCourse);
 
 // Assessments
-router.get('/assessments/:id', getAssessmentDetails);
-router.post('/assessments/:id/submit', submitAssessment);
+router.route('/assessments/:id')
+  .get(getAssessmentDetails)
+  .post(submitAssessment); // Using .post() for submissions on the same ID path
 
-// Peer Interaction
-router.get('/peers', getPeers);
-router.post('/messages', sendMessage);
-router.get('/messages/:userId', getMessages);
+// Peer Interaction & Messaging
+router.route('/peers')
+  .get(getPeers);
+router.route('/messages')
+  .post(sendMessage);
+router.route('/messages/:userId')
+  .get(getMessages);
 
 export default router;

@@ -1,12 +1,13 @@
+// src/routes/tutorRoutes.js
 import express from 'express';
 import { registerTutor, loginTutor, logoutTutor } from '../controllers/tutorAuthController.js';
-import { 
-  getMyProfile, 
-  updateMyProfile, 
-  createSession, 
-  getSessions, 
+import {
+  getMyProfile,
+  updateMyProfile,
+  createSession,
+  getSessions,
   getSession,
-  updateSession, 
+  updateSession,
   deleteSession,
   getMessages,
   getConversations,
@@ -20,49 +21,61 @@ import {
 } from '../controllers/tutorController.js';
 
 import { protect, tutorOnly } from '../middleware/authMiddleware.js';
+
 const router = express.Router();
 
-// Public routes
+// --- Public Routes ---
 router.post('/auth/register', registerTutor);
 router.post('/auth/login', loginTutor);
 router.post('/auth/logout', logoutTutor);
 
-// Messages
-router.get('/messages', getConversations);
-router.get('/messages/:userId', getMessages);
-
-// Protected routes (Tutor only)
+// --- Protected Routes (Must be Logged In) ---
 router.use(protect);
 
-// Auth Me route (Protected but accessible before tutorOnly check if needed, 
-router.get('/auth/me', getMyProfile);
+// Messaging
+router.route('/messages')
+  .get(getConversations)
+  .post(sendMessage);
+router.route('/messages/:userId')
+  .get(getMessages);
 
-router.use(tutorOnly);
-
+// --- Tutor Exclusive Routes ---
 router.use(tutorOnly);
 
 // Profile
-router.get('/me', getMyProfile);
-router.patch('/me', updateMyProfile);
+router.route('/me')
+  .get(getMyProfile)
+  .patch(updateMyProfile);
 
 // Sessions
-router.post('/sessions', createSession);
-router.get('/sessions', getSessions);
-router.get('/sessions/:id', getSession);
-router.patch('/sessions/:id', updateSession);
-router.delete('/sessions/:id', deleteSession);
+router.route('/sessions')
+  .get(getSessions)
+  .post(createSession);
+
+router.route('/sessions/:id')
+  .get(getSession)
+  .patch(updateSession)
+  .delete(deleteSession);
 
 // Students
-router.get('/students', getMyStudents);
-router.get('/students/:studentId/progress', getStudentProgress);
+router.route('/students')
+  .get(getMyStudents);
+router.route('/students/:studentId/progress')
+  .get(getStudentProgress);
 
 // Analytics
-router.get('/analytics/overview', getAnalyticsOverview);
-router.get('/analytics/earnings', getEarningsAnalytics);
-router.get('/analytics/reviews', getReviewAnalytics);
+router.route('/analytics/overview')
+  .get(getAnalyticsOverview);
+router.route('/analytics/earnings')
+  .get(getEarningsAnalytics);
+router.route('/analytics/reviews')
+  .get(getReviewAnalytics);
 
+// --- Tutor Exclusive Routes ---
 // Reviews
-router.get('/reviews', getReviews);
-router.post('/reviews/:id/respond', respondToReview);
+router.route('/reviews')
+  .get(getReviews);
+router.route('/reviews/:id/respond')
+  .post(respondToReview);
 
 export default router;
