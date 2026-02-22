@@ -68,6 +68,21 @@ export const getMessages = async (req, res) => {
     return sendError(res, error.message, 'FETCH_MESSAGES_FAILED', 500);
   }
 };
+
+export const sendMessage = async (req, res) => {
+  try {
+    const { receiverId, message } = req.body;
+    const newMessage = await Message.create({
+      senderId: req.user._id,
+      receiverId,
+      message
+    });
+
+    return sendSuccess(res, newMessage, 201);
+  } catch (error) {
+    return sendError(res, error.message, 'SEND_MESSAGE_FAILED', 500);
+  }
+};
 // Fetch a single session by ID
 export const getSession = async (req, res) => {
   try {

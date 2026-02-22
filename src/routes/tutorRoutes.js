@@ -11,6 +11,7 @@ import {
   deleteSession,
   getMessages,
   getConversations,
+  sendMessage,
   getMyStudents,
   getStudentProgress,
   getAnalyticsOverview,
