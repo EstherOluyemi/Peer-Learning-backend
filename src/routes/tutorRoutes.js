@@ -76,6 +76,29 @@ router.route('/sessions/:id')
   .patch(updateSession)
   .delete(deleteSession);
 
+// Session Chat — stub routes (returns empty data until persistent chat is built)
+// IMPORTANT: must be defined after /sessions/:id so Express doesn't swallow :id="chat"
+router.get('/sessions/:id/chat', async (req, res) => {
+  // TODO: replace with real ChatMessage model query
+  res.json({ success: true, data: [], messages: [] });
+});
+
+router.post('/sessions/:id/chat', async (req, res) => {
+  const { text } = req.body;
+  if (!text?.trim()) {
+    return res.status(400).json({ success: false, error: 'Message text is required' });
+  }
+  // TODO: persist to ChatMessage model + broadcast via WebSocket
+  res.status(201).json({
+    success: true,
+    data: {
+      id: Date.now().toString(),
+      text: text.trim(),
+      timestamp: new Date().toISOString(),
+    }
+  });
+});
+
 // Students
 router.route('/students')
   .get(getMyStudents);
@@ -90,7 +113,6 @@ router.route('/analytics/earnings')
 router.route('/analytics/reviews')
   .get(getReviewAnalytics);
 
-// --- Tutor Exclusive Routes ---
 // Reviews
 router.route('/reviews')
   .get(getReviews);
