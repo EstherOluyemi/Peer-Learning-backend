@@ -8,13 +8,17 @@ import {
   getMyProgress,
   updateProgress,
   getMySessions,
+  browseSessions,
+  getSessionDetails,
+  joinSession,
+  leaveSession,
   getAssessmentDetails,
   submitAssessment,
   getPeers,
   sendMessage,
   getMessages
 } from '../controllers/learnerController.js';
-import { protect } from '../middleware/authMiddleware.js';
+import { protect, learnerOnly } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
@@ -28,6 +32,7 @@ router.get('/courses', getCourses);
 
 // --- Protected Routes (Login Required) ---
 router.use(protect);
+router.use(learnerOnly);
 
 // Identity & Profile
 router.route('/me')
@@ -42,6 +47,18 @@ router.route('/me/progress/:courseId')
 
 router.route('/sessions')
   .get(getMySessions);
+
+router.route('/sessions/browse')
+  .get(browseSessions);
+
+router.route('/sessions/:sessionId')
+  .get(getSessionDetails);
+
+router.route('/sessions/:sessionId/join')
+  .post(joinSession);
+
+router.route('/sessions/:sessionId/leave')
+  .post(leaveSession);
 
 // Course Interactions
 router.route('/courses/:id/enroll')

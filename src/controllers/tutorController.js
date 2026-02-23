@@ -5,6 +5,7 @@ import User from '../models/User.js';
 import Payment from '../models/Payment.js';
 import Review from '../models/Review.js';
 import Message from '../models/Message.js';
+import SessionJoinRequest from '../models/SessionJoinRequest.js';
 import { sendSuccess, sendError } from '../middleware/responseHandler.js';
 import { getOrCreatePermanentGoogleMeetLink } from '../services/googleMeetService.js';
 
@@ -165,6 +166,85 @@ export const deleteSession = async (req, res) => {
     return res.status(204).send();
   } catch (error) {
     return sendError(res, error.message, 'DELETE_SESSION_FAILED', 500);
+  }
+};
+
+export const getSessionRequests = async (req, res) => {
+  try {
+    const session = await Session.findOne({ _id: req.params.sessionId, tutorId: req.tutor._id });
+    if (!session) return sendError(res, 'Session not found', 'SESSION_NOT_FOUND', 404);
+
+    const requests = await SessionJoinRequest.find({ sessionId: session._id })
+      .populate('learnerId', 'name email')
+      .sort({ createdAt: -1 });
+
+    const data = requests.map(request => ({
+      requestId: request._id,
+      sessionId: request.sessionId,
+      learnerId: request.learnerId?._id || request.learnerId,
+      status: request.status,
+      createdAt: request.createdAt
+    }));
+
+    return sendSuccess(res, data);
+  } catch (error) {
+    return sendError(res, error.message, 'FETCH_SESSION_REQUESTS_FAILED', 500);
+  }
+};
+
+export const approveSessionRequest = async (req, res) => {
+  try {
+    const session = await Session.findOne({ _id: req.params.sessionId, tutorId: req.tutor._id });
+    if (!session) return sendError(res, 'Session not found', 'SESSION_NOT_FOUND', 404);
+
+    const request = await SessionJoinRequest.findOne({
+      _id: req.params.requestId,
+      sessionId: session._id
+    });
+    if (!request) return sendError(res, 'Join request not found', 'REQUEST_NOT_FOUND', 404);
+
+    const isStudent = (session.studentIds || []).some(id => id.toString() === request.learnerId.toString());
+    if (!isStudent && session.maxParticipants && session.studentIds.length >= session.maxParticipants) {
+      return sendError(res, 'Session is full', 'SESSION_FULL', 409);
+    }
+
+    if (!isStudent) {
+      session.studentIds = session.studentIds || [];
+      session.studentIds.push(request.learnerId);
+      await session.save();
+    }
+
+    request.status = 'approved';
+    await request.save();
+
+    return sendSuccess(res, { requestId: request._id, status: 'approved' });
+  } catch (error) {
+    return sendError(res, error.message, 'APPROVE_SESSION_REQUEST_FAILED', 500);
+  }
+};
+
+export const rejectSessionRequest = async (req, res) => {
+  try {
+    const session = await Session.findOne({ _id: req.params.sessionId, tutorId: req.tutor._id });
+    if (!session) return sendError(res, 'Session not found', 'SESSION_NOT_FOUND', 404);
+
+    const request = await SessionJoinRequest.findOne({
+      _id: req.params.requestId,
+      sessionId: session._id
+    });
+    if (!request) return sendError(res, 'Join request not found', 'REQUEST_NOT_FOUND', 404);
+
+    session.studentIds = (session.studentIds || []).filter(
+      id => id.toString() !== request.learnerId.toString()
+    );
+    await session.save();
+
+    request.status = 'rejected';
+    await request.save();
+
+    return sendSuccess(res, { requestId: request._id, status: 'rejected' });
+  } catch (error) {
+    return sendError(res, error.message, 'REJECT_SESSION_REQUEST_FAILED', 500);
   }
 };
 

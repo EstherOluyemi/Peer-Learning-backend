@@ -9,6 +9,9 @@ import {
   getSession,
   updateSession,
   deleteSession,
+  getSessionRequests,
+  approveSessionRequest,
+  rejectSessionRequest,
   getMessages,
   getConversations,
   sendMessage,
@@ -70,6 +73,15 @@ router.route('/me')
 router.route('/sessions')
   .get(getSessions)
   .post(createSession);
+
+router.route('/sessions/:sessionId/requests')
+  .get(getSessionRequests);
+
+router.route('/sessions/:sessionId/requests/:requestId/approve')
+  .post(approveSessionRequest);
+
+router.route('/sessions/:sessionId/requests/:requestId/reject')
+  .post(rejectSessionRequest);
 
 router.route('/sessions/:id')
   .get(getSession)

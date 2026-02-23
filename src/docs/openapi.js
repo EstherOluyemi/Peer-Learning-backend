@@ -27,6 +27,7 @@ export default {
     { name: 'Learner Auth' },
     { name: 'Learner Courses' },
     { name: 'Learner Progress' },
+    { name: 'Learner Sessions' },
     { name: 'Learner Assessments' },
     { name: 'Learner Interaction' }
   ],
@@ -533,6 +534,51 @@ export default {
         }
       }
     },
+    '/v1/tutor/sessions/{sessionId}/requests': {
+      get: {
+        tags: ['Tutor Sessions'],
+        summary: 'List session join requests',
+        security: [{ bearerAuth: [], cookieAuth: [] }],
+        parameters: [
+          { name: 'sessionId', in: 'path', required: true, schema: { type: 'string' } }
+        ],
+        responses: {
+          200: { description: 'Requests', content: { 'application/json': { schema: { $ref: '#/components/schemas/SuccessResponse' } } } },
+          404: { description: 'Session not found', content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+        }
+      }
+    },
+    '/v1/tutor/sessions/{sessionId}/requests/{requestId}/approve': {
+      post: {
+        tags: ['Tutor Sessions'],
+        summary: 'Approve join request',
+        security: [{ bearerAuth: [], cookieAuth: [] }],
+        parameters: [
+          { name: 'sessionId', in: 'path', required: true, schema: { type: 'string' } },
+          { name: 'requestId', in: 'path', required: true, schema: { type: 'string' } }
+        ],
+        responses: {
+          200: { description: 'Approved', content: { 'application/json': { schema: { $ref: '#/components/schemas/SuccessResponse' } } } },
+          404: { description: 'Not found', content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } } },
+          409: { description: 'Session full', content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+        }
+      }
+    },
+    '/v1/tutor/sessions/{sessionId}/requests/{requestId}/reject': {
+      post: {
+        tags: ['Tutor Sessions'],
+        summary: 'Reject join request',
+        security: [{ bearerAuth: [], cookieAuth: [] }],
+        parameters: [
+          { name: 'sessionId', in: 'path', required: true, schema: { type: 'string' } },
+          { name: 'requestId', in: 'path', required: true, schema: { type: 'string' } }
+        ],
+        responses: {
+          200: { description: 'Rejected', content: { 'application/json': { schema: { $ref: '#/components/schemas/SuccessResponse' } } } },
+          404: { description: 'Not found', content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+        }
+      }
+    },
     '/v1/tutor/students': {
       get: {
         tags: ['Tutor Students'],
@@ -700,6 +746,78 @@ export default {
         requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/UpdateProgressRequest' } } } },
         responses: {
           200: { description: 'Updated', content: { 'application/json': { schema: { $ref: '#/components/schemas/SuccessResponse' } } } },
+          404: { description: 'Not found', content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+        }
+      }
+    },
+    '/v1/learner/sessions/browse': {
+      get: {
+        tags: ['Learner Sessions'],
+        summary: 'Browse available sessions',
+        security: [{ bearerAuth: [], cookieAuth: [] }],
+        parameters: [
+          { name: 'search', in: 'query', schema: { type: 'string' } },
+          { name: 'subject', in: 'query', schema: { type: 'string' } },
+          { name: 'level', in: 'query', schema: { type: 'string' } },
+          { name: 'maxPrice', in: 'query', schema: { type: 'number' } },
+          { name: 'sortBy', in: 'query', schema: { type: 'string', enum: ['upcoming', 'popular', 'newest', 'price-low', 'price-high'] } },
+          { name: 'page', in: 'query', schema: { type: 'number' } },
+          { name: 'limit', in: 'query', schema: { type: 'number' } }
+        ],
+        responses: {
+          200: { description: 'Sessions', content: { 'application/json': { schema: { $ref: '#/components/schemas/SuccessResponse' } } } }
+        }
+      }
+    },
+    '/v1/learner/sessions': {
+      get: {
+        tags: ['Learner Sessions'],
+        summary: 'Get enrolled sessions',
+        security: [{ bearerAuth: [], cookieAuth: [] }],
+        responses: {
+          200: { description: 'Sessions', content: { 'application/json': { schema: { $ref: '#/components/schemas/SuccessResponse' } } } }
+        }
+      }
+    },
+    '/v1/learner/sessions/{sessionId}': {
+      get: {
+        tags: ['Learner Sessions'],
+        summary: 'Get session details',
+        security: [{ bearerAuth: [], cookieAuth: [] }],
+        parameters: [
+          { name: 'sessionId', in: 'path', required: true, schema: { type: 'string' } }
+        ],
+        responses: {
+          200: { description: 'Session', content: { 'application/json': { schema: { $ref: '#/components/schemas/SuccessResponse' } } } },
+          404: { description: 'Not found', content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+        }
+      }
+    },
+    '/v1/learner/sessions/{sessionId}/join': {
+      post: {
+        tags: ['Learner Sessions'],
+        summary: 'Request to join session',
+        security: [{ bearerAuth: [], cookieAuth: [] }],
+        parameters: [
+          { name: 'sessionId', in: 'path', required: true, schema: { type: 'string' } }
+        ],
+        responses: {
+          200: { description: 'Request created', content: { 'application/json': { schema: { $ref: '#/components/schemas/SuccessResponse' } } } },
+          404: { description: 'Not found', content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } } },
+          409: { description: 'Session full', content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+        }
+      }
+    },
+    '/v1/learner/sessions/{sessionId}/leave': {
+      post: {
+        tags: ['Learner Sessions'],
+        summary: 'Leave session',
+        security: [{ bearerAuth: [], cookieAuth: [] }],
+        parameters: [
+          { name: 'sessionId', in: 'path', required: true, schema: { type: 'string' } }
+        ],
+        responses: {
+          200: { description: 'Left session', content: { 'application/json': { schema: { $ref: '#/components/schemas/SuccessResponse' } } } },
           404: { description: 'Not found', content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
         }
       }

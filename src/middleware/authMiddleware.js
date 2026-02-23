@@ -39,3 +39,10 @@ export const tutorOnly = async (req, res, next) => {
     return sendError(res, 'Not authorized as a tutor', 'TUTOR_ONLY', 403);
   }
 };
+
+export const learnerOnly = async (req, res, next) => {
+  if (req.user && req.user.role === 'student') {
+    return next();
+  }
+  return sendError(res, 'Not authorized as a learner', 'LEARNER_ONLY', 403);
+};

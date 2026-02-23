@@ -19,10 +19,41 @@ import Enrollment from '../models/Enrollment.js';
 import Progress from '../models/Progress.js';
 import AssessmentSubmission from '../models/AssessmentSubmission.js';
 import Message from '../models/Message.js';
-import User from '../models/User.js';
 import LearnerProfile from '../models/LearnerProfile.js';
 import Session from '../models/Session.js';
+import SessionJoinRequest from '../models/SessionJoinRequest.js';
 import { sendSuccess, sendError } from '../middleware/responseHandler.js';
+
+const buildSessionResponse = (session) => {
+  const course = session?.courseId && session.courseId._id ? session.courseId : null;
+  const tutor = session?.tutorId && session.tutorId._id ? session.tutorId : null;
+  const tutorUser = tutor?.userId && tutor.userId._id ? tutor.userId : null;
+  const startTime = session?.startTime ? new Date(session.startTime) : null;
+  const endTime = session?.endTime ? new Date(session.endTime) : null;
+  const duration = startTime && endTime ? Math.max(0, Math.round((endTime - startTime) / 60000)) : null;
+  return {
+    _id: session._id,
+    title: session.title,
+    description: session.description || '',
+    subject: session.subject,
+    level: course?.level || null,
+    startTime: session.startTime,
+    endTime: session.endTime,
+    duration,
+    maxParticipants: session.maxParticipants || 1,
+    studentIds: (session.studentIds || []).map(id => id.toString()),
+    createdAt: session.createdAt,
+    tutor: {
+      id: tutor?._id || null,
+      name: tutorUser?.name || tutor?.name || null,
+      avatar: tutorUser?.avatar || tutor?.avatar || null,
+      rating: tutor?.rating ?? 0,
+      reviewCount: tutor?.reviewCount ?? 0,
+      hourlyRate: tutor?.hourlyRate ?? 0
+    },
+    meetingLink: session.meetingLink || null
+  };
+};
 
 // --- Profile Management ---
 export const getMyProfile = async (req, res) => {
@@ -113,34 +144,218 @@ export const updateProgress = async (req, res) => {
 
 export const getMySessions = async (req, res) => {
   try {
-    const { status, startDate, endDate } = req.query;
-    const enrollments = await Enrollment.find({
-      learnerId: req.user._id,
-      status: { $ne: 'dropped' }
-    }).select('courseId');
+    const requests = await SessionJoinRequest.find({ learnerId: req.user._id });
+    const requestBySession = new Map(requests.map(request => [request.sessionId.toString(), request]));
+    const requestSessionIds = requests.map(request => request.sessionId);
 
-    const courseIds = enrollments.map(enrollment => enrollment.courseId);
-    const orConditions = [{ studentIds: req.user._id }];
-    if (courseIds.length > 0) {
-      orConditions.push({ courseId: { $in: courseIds } });
-    }
-
-    const query = { $or: orConditions };
-    if (status) query.status = status;
-    if (startDate || endDate) {
-      query.startTime = {};
-      if (startDate) query.startTime.$gte = new Date(startDate);
-      if (endDate) query.startTime.$lte = new Date(endDate);
-    }
-
-    const sessions = await Session.find(query)
+    const sessions = await Session.find({
+      $or: [
+        { _id: { $in: requestSessionIds } },
+        { studentIds: req.user._id }
+      ]
+    })
       .populate('courseId')
       .populate({ path: 'tutorId', populate: { path: 'userId', select: 'name email role' } })
       .sort({ startTime: -1 });
 
-    return sendSuccess(res, sessions);
+    const data = sessions.map(session => {
+      const request = requestBySession.get(session._id.toString());
+      const isStudent = (session.studentIds || []).some(id => id.toString() === req.user._id.toString());
+      const enrollmentStatus = isStudent ? 'approved' : (request?.status || 'pending');
+      return {
+        session: buildSessionResponse(session),
+        enrollmentStatus
+      };
+    });
+
+    return sendSuccess(res, data);
   } catch (error) {
     return sendError(res, error.message, 'FETCH_SESSIONS_FAILED', 500);
+  }
+};
+
+export const browseSessions = async (req, res) => {
+  try {
+    const {
+      search,
+      subject,
+      level,
+      maxPrice,
+      sortBy = 'upcoming',
+      page = 1,
+      limit = 20
+    } = req.query;
+
+    const pageNumber = Math.max(1, parseInt(page, 10) || 1);
+    const limitNumber = Math.max(1, Math.min(100, parseInt(limit, 10) || 20));
+    const searchValue = search?.toString().trim().toLowerCase();
+    const subjectValue = subject?.toString().trim().toLowerCase();
+    const levelValue = level?.toString().trim();
+    const maxPriceValue = maxPrice !== undefined ? Number(maxPrice) : null;
+
+    const sessions = await Session.find()
+      .populate('courseId')
+      .populate({ path: 'tutorId', populate: { path: 'userId', select: 'name email role' } });
+
+    let filtered = sessions.filter(session => {
+      const course = session.courseId && session.courseId._id ? session.courseId : null;
+      const tutor = session.tutorId && session.tutorId._id ? session.tutorId : null;
+      const tutorUser = tutor?.userId && tutor.userId._id ? tutor.userId : null;
+      if (subjectValue) {
+        const matchesSubject = session.subject?.toLowerCase() === subjectValue
+          || (course?.tags || []).some(tag => tag?.toLowerCase() === subjectValue);
+        if (!matchesSubject) return false;
+      }
+      if (levelValue && course?.level !== levelValue) return false;
+      if (maxPriceValue !== null && Number.isFinite(maxPriceValue)) {
+        const price = course?.price ?? null;
+        if (price === null || price > maxPriceValue) return false;
+      }
+      if (searchValue) {
+        const fields = [
+          session.title,
+          session.subject,
+          session.description,
+          tutorUser?.name
+        ]
+          .filter(Boolean)
+          .map(value => value.toString().toLowerCase());
+        if (!fields.some(value => value.includes(searchValue))) return false;
+      }
+      return true;
+    });
+
+    const sortHandlers = {
+      upcoming: (a, b) => new Date(a.startTime) - new Date(b.startTime),
+      popular: (a, b) => (b.studentIds?.length || 0) - (a.studentIds?.length || 0),
+      newest: (a, b) => new Date(b.createdAt) - new Date(a.createdAt),
+      'price-low': (a, b) => {
+        const priceA = a.courseId?.price ?? Number.POSITIVE_INFINITY;
+        const priceB = b.courseId?.price ?? Number.POSITIVE_INFINITY;
+        return priceA - priceB;
+      },
+      'price-high': (a, b) => {
+        const priceA = a.courseId?.price ?? Number.NEGATIVE_INFINITY;
+        const priceB = b.courseId?.price ?? Number.NEGATIVE_INFINITY;
+        return priceB - priceA;
+      }
+    };
+
+    const sorter = sortHandlers[sortBy] || sortHandlers.upcoming;
+    filtered = filtered.sort(sorter);
+
+    const total = filtered.length;
+    const startIndex = (pageNumber - 1) * limitNumber;
+    const paged = filtered.slice(startIndex, startIndex + limitNumber);
+    const data = paged.map(buildSessionResponse);
+
+    return res.status(200).json({
+      status: 'success',
+      data,
+      pagination: { page: pageNumber, limit: limitNumber, total }
+    });
+  } catch (error) {
+    return sendError(res, error.message, 'FETCH_SESSIONS_FAILED', 500);
+  }
+};
+
+export const getSessionDetails = async (req, res) => {
+  try {
+    const session = await Session.findById(req.params.sessionId)
+      .populate('courseId')
+      .populate({ path: 'tutorId', populate: { path: 'userId', select: 'name email role' } });
+    if (!session) return sendError(res, 'Session not found', 'SESSION_NOT_FOUND', 404);
+    return sendSuccess(res, buildSessionResponse(session));
+  } catch (error) {
+    return sendError(res, error.message, 'FETCH_SESSION_FAILED', 500);
+  }
+};
+
+export const joinSession = async (req, res) => {
+  try {
+    const session = await Session.findById(req.params.sessionId);
+    if (!session) return sendError(res, 'Session not found', 'SESSION_NOT_FOUND', 404);
+
+    const isStudent = (session.studentIds || []).some(id => id.toString() === req.user._id.toString());
+    const existingRequest = await SessionJoinRequest.findOne({
+      sessionId: session._id,
+      learnerId: req.user._id
+    });
+
+    if (!isStudent && session.maxParticipants && session.studentIds.length >= session.maxParticipants) {
+      return sendError(res, 'Session is full', 'SESSION_FULL', 409);
+    }
+
+    if (isStudent) {
+      const responseRequest = existingRequest || await SessionJoinRequest.findOneAndUpdate(
+        { sessionId: session._id, learnerId: req.user._id },
+        { tutorId: session.tutorId, status: 'approved' },
+        { new: true, upsert: true }
+      );
+      return sendSuccess(res, {
+        requestId: responseRequest._id,
+        sessionId: session._id,
+        learnerId: req.user._id,
+        status: 'approved'
+      });
+    }
+
+    if (existingRequest) {
+      if (existingRequest.status === 'rejected') {
+        existingRequest.status = 'pending';
+        await existingRequest.save();
+      }
+      return sendSuccess(res, {
+        requestId: existingRequest._id,
+        sessionId: session._id,
+        learnerId: req.user._id,
+        status: existingRequest.status
+      });
+    }
+
+    const request = await SessionJoinRequest.create({
+      sessionId: session._id,
+      tutorId: session.tutorId,
+      learnerId: req.user._id,
+      status: 'pending'
+    });
+
+    return sendSuccess(res, {
+      requestId: request._id,
+      sessionId: session._id,
+      learnerId: req.user._id,
+      status: request.status
+    });
+  } catch (error) {
+    return sendError(res, error.message, 'JOIN_SESSION_FAILED', 500);
+  }
+};
+
+export const leaveSession = async (req, res) => {
+  try {
+    const session = await Session.findById(req.params.sessionId);
+    if (!session) return sendError(res, 'Session not found', 'SESSION_NOT_FOUND', 404);
+
+    const beforeCount = session.studentIds.length;
+    session.studentIds = (session.studentIds || []).filter(
+      id => id.toString() !== req.user._id.toString()
+    );
+    if (session.studentIds.length !== beforeCount) {
+      await session.save();
+    }
+
+    const request = await SessionJoinRequest.findOne({
+      sessionId: session._id,
+      learnerId: req.user._id
+    });
+    if (request && request.status !== 'rejected') {
+      request.status = 'rejected';
+      await request.save();
+    }
+
+    return sendSuccess(res, { sessionId: session._id, status: 'left' });
+  } catch (error) {
+    return sendError(res, error.message, 'LEAVE_SESSION_FAILED', 500);
   }
 };
 
