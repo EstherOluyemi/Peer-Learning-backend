@@ -1,39 +1,49 @@
+// src/services/googleMeetService.js
 import { google } from 'googleapis';
 import crypto from 'crypto';
 import GoogleMeetMeeting from '../models/GoogleMeetMeeting.js';
 import Tutor from '../models/Tutor.js';
 
-const getOAuthClient = ({ requireRefreshToken = true } = {}) => {
+// FIX 1: Removed GOOGLE_REFRESH_TOKEN from env — each tutor uses their own stored token.
+// requireRefreshToken only validates the client credentials, NOT a system-level token.
+const getOAuthClient = () => {
   const clientId = process.env.GOOGLE_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
   const redirectUri = process.env.GOOGLE_REDIRECT_URI;
-  const refreshToken = process.env.GOOGLE_REFRESH_TOKEN;
 
-  if (!clientId || !clientSecret || !redirectUri || (requireRefreshToken && !refreshToken)) {
+  if (!clientId || !clientSecret || !redirectUri) {
     const error = new Error('Google OAuth credentials are not configured');
     error.code = 'AUTH_CONFIGURATION_MISSING';
     error.status = 500;
     throw error;
   }
 
-  const oauth2Client = new google.auth.OAuth2(clientId, clientSecret, redirectUri);
-  if (refreshToken) {
-    oauth2Client.setCredentials({ refresh_token: refreshToken });
-  }
-  return oauth2Client;
+  return new google.auth.OAuth2(clientId, clientSecret, redirectUri);
 };
 
 const mapGoogleError = (error) => {
   const status = error?.response?.status;
   const reason = error?.response?.data?.error?.errors?.[0]?.reason;
   const oauthError = error?.response?.data?.error;
-  const message = error?.response?.data?.error?.message || error?.response?.data?.error_description || error.message;
+  const message =
+    error?.response?.data?.error?.message ||
+    error?.response?.data?.error_description ||
+    error.message;
 
   if (oauthError === 'invalid_grant') return { status: 401, code: 'AUTH_FAILED', message };
   if (status === 401) return { status: 401, code: 'AUTH_FAILED', message };
   if (status === 403 && reason === 'quotaExceeded') return { status: 429, code: 'QUOTA_EXCEEDED', message };
   if (status === 403) return { status: 403, code: 'PERMISSION_DENIED', message };
   return { status: status || 500, code: 'GOOGLE_API_ERROR', message };
+};
+
+const throwMapped = (error) => {
+  if (error?.code && error?.status) throw error;
+  const mapped = mapGoogleError(error);
+  const err = new Error(mapped.message);
+  err.code = mapped.code;
+  err.status = mapped.status;
+  throw err;
 };
 
 const validateTimeSlot = (scheduledTime, durationMinutes) => {
@@ -57,7 +67,8 @@ const validateTimeSlot = (scheduledTime, durationMinutes) => {
     error.status = 400;
     throw error;
   }
-  if (startTime <= new Date()) {
+  // FIX 2: Allow a 30-second grace period to account for server processing delays
+  if (startTime <= new Date(Date.now() - 30000)) {
     const error = new Error('Scheduled time must be in the future');
     error.code = 'INVALID_TIME_SLOT';
     error.status = 400;
@@ -67,17 +78,15 @@ const validateTimeSlot = (scheduledTime, durationMinutes) => {
 };
 
 const buildCalendarClient = (refreshToken) => {
-  const auth = getOAuthClient({ requireRefreshToken: true });
-  if (refreshToken) {
-    auth.setCredentials({ refresh_token: refreshToken });
-  }
+  const auth = getOAuthClient();
+  auth.setCredentials({ refresh_token: refreshToken });
   return google.calendar({ version: 'v3', auth });
 };
 
 const getOAuthScopes = () => {
   const rawScopes = process.env.GOOGLE_OAUTH_SCOPES;
   if (rawScopes) {
-    return rawScopes.split(',').map(scope => scope.trim()).filter(Boolean);
+    return rawScopes.split(',').map((s) => s.trim()).filter(Boolean);
   }
   return ['https://www.googleapis.com/auth/calendar.events'];
 };
@@ -94,47 +103,49 @@ const decodeState = (value) => {
 
 const createCalendarEventWithMeet = async ({ summary, startTime, endTime, refreshToken }) => {
   if (!refreshToken) {
-    const error = new Error('Google account is not connected');
+    const error = new Error('Google account is not connected. Please connect your Google account first.');
     error.code = 'AUTH_FAILED';
     error.status = 401;
     throw error;
   }
+
   const calendar = buildCalendarClient(refreshToken);
   const calendarId = process.env.GOOGLE_CALENDAR_ID || 'primary';
   const requestId = crypto.randomUUID();
 
-  const event = await calendar.events.insert({
-    calendarId,
-    conferenceDataVersion: 1,
-    requestBody: {
-      summary,
-      start: { dateTime: startTime.toISOString() },
-      end: { dateTime: endTime.toISOString() },
-      conferenceData: {
-        createRequest: {
-          requestId,
-          conferenceSolutionKey: { type: 'hangoutsMeet' }
-        }
-      }
+  try {
+    const event = await calendar.events.insert({
+      calendarId,
+      conferenceDataVersion: 1,
+      requestBody: {
+        summary,
+        start: { dateTime: startTime.toISOString() },
+        end: { dateTime: endTime.toISOString() },
+        conferenceData: {
+          createRequest: {
+            requestId,
+            conferenceSolutionKey: { type: 'hangoutsMeet' },
+          },
+        },
+      },
+    });
+
+    const eventData = event?.data;
+    const joinUrl =
+      eventData?.hangoutLink || eventData?.conferenceData?.entryPoints?.[0]?.uri;
+    const meetingId = eventData?.conferenceData?.conferenceId || eventData?.id;
+
+    if (!joinUrl || !meetingId || !eventData?.id) {
+      const error = new Error('Failed to generate meeting link');
+      error.code = 'MEETING_LINK_FAILED';
+      error.status = 500;
+      throw error;
     }
-  });
 
-  const eventData = event?.data;
-  const joinUrl = eventData?.hangoutLink || eventData?.conferenceData?.entryPoints?.[0]?.uri;
-  const meetingId = eventData?.conferenceData?.conferenceId || eventData?.id;
-
-  if (!joinUrl || !meetingId || !eventData?.id) {
-    const error = new Error('Failed to generate meeting link');
-    error.code = 'MEETING_LINK_FAILED';
-    error.status = 500;
-    throw error;
+    return { joinUrl, meetingId, calendarEventId: eventData.id };
+  } catch (error) {
+    throwMapped(error);
   }
-
-  return {
-    joinUrl,
-    meetingId,
-    calendarEventId: eventData.id
-  };
 };
 
 const validatePermanentLink = async ({ calendarEventId, refreshToken }) => {
@@ -150,7 +161,8 @@ const validatePermanentLink = async ({ calendarEventId, refreshToken }) => {
     if (!eventData || eventData.status === 'cancelled') {
       return { valid: false, reason: 'MEETING_LINK_INVALID' };
     }
-    const joinUrl = eventData?.hangoutLink || eventData?.conferenceData?.entryPoints?.[0]?.uri;
+    const joinUrl =
+      eventData?.hangoutLink || eventData?.conferenceData?.entryPoints?.[0]?.uri;
     if (!joinUrl) {
       return { valid: false, reason: 'MEETING_LINK_INVALID' };
     }
@@ -160,11 +172,7 @@ const validatePermanentLink = async ({ calendarEventId, refreshToken }) => {
     if (status === 404 || status === 410) {
       return { valid: false, reason: 'MEETING_LINK_INVALID' };
     }
-    const mapped = mapGoogleError(error);
-    const mappedError = new Error(mapped.message);
-    mappedError.code = mapped.code;
-    mappedError.status = mapped.status;
-    throw mappedError;
+    throwMapped(error);
   }
 };
 
@@ -173,23 +181,24 @@ export const createGoogleMeetMeeting = async ({
   studentId,
   scheduledTime,
   meetingTitle,
-  durationMinutes = 60
+  durationMinutes = 60,
 }) => {
   const { startTime, endTime } = validateTimeSlot(scheduledTime, durationMinutes);
 
   try {
     const tutor = await Tutor.findById(tutorId);
     if (!tutor || !tutor.googleOAuthRefreshToken) {
-      const error = new Error('Google account is not connected');
+      const error = new Error('Google account is not connected. Please connect your Google account first.');
       error.code = 'AUTH_FAILED';
       error.status = 401;
       throw error;
     }
+
     const { joinUrl, meetingId, calendarEventId } = await createCalendarEventWithMeet({
       summary: meetingTitle,
       startTime,
       endTime,
-      refreshToken: tutor.googleOAuthRefreshToken
+      refreshToken: tutor.googleOAuthRefreshToken,
     });
 
     const meetingDoc = await GoogleMeetMeeting.create({
@@ -200,22 +209,17 @@ export const createGoogleMeetMeeting = async ({
       joinUrl,
       title: meetingTitle,
       startTime,
-      endTime
+      endTime,
     });
 
     return {
       meetingId: meetingDoc.meetingId,
       joinUrl: meetingDoc.joinUrl,
       startTime: meetingDoc.startTime,
-      endTime: meetingDoc.endTime
+      endTime: meetingDoc.endTime,
     };
   } catch (error) {
-    if (error?.code && error?.status) throw error;
-    const mapped = mapGoogleError(error);
-    const mappedError = new Error(mapped.message);
-    mappedError.code = mapped.code;
-    mappedError.status = mapped.status;
-    throw mappedError;
+    throwMapped(error);
   }
 };
 
@@ -224,7 +228,7 @@ export const getOrCreatePermanentGoogleMeetLink = async ({
   meetingTitle,
   scheduledTime,
   durationMinutes = 60,
-  forceNew = false
+  forceNew = false,
 }) => {
   const tutor = await Tutor.findById(tutorId);
   if (!tutor) {
@@ -236,11 +240,13 @@ export const getOrCreatePermanentGoogleMeetLink = async ({
 
   const now = new Date();
   const hadExisting = Boolean(tutor.permanentMeetLink);
+
   if (!forceNew && tutor.permanentMeetLink && tutor.permanentMeetCalendarEventId && !tutor.permanentMeetInvalidatedAt) {
     const validation = await validatePermanentLink({
       calendarEventId: tutor.permanentMeetCalendarEventId,
-      refreshToken: tutor.googleOAuthRefreshToken
+      refreshToken: tutor.googleOAuthRefreshToken,
     });
+
     if (validation.valid) {
       await Tutor.updateOne(
         { _id: tutor._id },
@@ -250,35 +256,24 @@ export const getOrCreatePermanentGoogleMeetLink = async ({
         event: 'google_meet_permanent_link_reused',
         tutorId: String(tutor._id),
         calendarEventId: tutor.permanentMeetCalendarEventId,
-        meetingId: tutor.permanentMeetMeetingId
+        meetingId: tutor.permanentMeetMeetingId,
       }));
       const updatedTutor = await Tutor.findById(tutor._id);
-      return {
-        meetingId: updatedTutor.permanentMeetMeetingId,
-        joinUrl: updatedTutor.permanentMeetLink,
-        startTime: updatedTutor.permanentMeetLinkCreatedAt,
-        endTime: null,
-        usageCount: updatedTutor.permanentMeetUsageCount,
-        lastUsedAt: updatedTutor.permanentMeetLastUsedAt,
-        invalidatedAt: updatedTutor.permanentMeetInvalidatedAt,
-        calendarEventId: updatedTutor.permanentMeetCalendarEventId
-      };
+      return formatPermanentLinkResponse(updatedTutor);
     }
 
-    await Tutor.updateOne(
-      { _id: tutor._id },
-      { $set: { permanentMeetInvalidatedAt: now } }
-    );
+    await Tutor.updateOne({ _id: tutor._id }, { $set: { permanentMeetInvalidatedAt: now } });
     console.log(JSON.stringify({
       event: 'google_meet_permanent_link_invalidated',
       tutorId: String(tutor._id),
       calendarEventId: tutor.permanentMeetCalendarEventId,
-      meetingId: tutor.permanentMeetMeetingId
     }));
   }
 
+  // FIX 2: Use 2 minutes from now as default, with the grace period in validateTimeSlot
+  const defaultScheduledTime = new Date(Date.now() + 2 * 60000).toISOString();
   const { startTime, endTime } = validateTimeSlot(
-    scheduledTime || new Date(Date.now() + 5 * 60000).toISOString(),
+    scheduledTime || defaultScheduledTime,
     durationMinutes
   );
 
@@ -287,7 +282,7 @@ export const getOrCreatePermanentGoogleMeetLink = async ({
       summary: meetingTitle || 'Permanent Tutor Room',
       startTime,
       endTime,
-      refreshToken: tutor.googleOAuthRefreshToken
+      refreshToken: tutor.googleOAuthRefreshToken,
     });
 
     await Tutor.updateOne(
@@ -299,49 +294,48 @@ export const getOrCreatePermanentGoogleMeetLink = async ({
           permanentMeetCalendarEventId: calendarEventId,
           permanentMeetLinkCreatedAt: now,
           permanentMeetLastUsedAt: now,
-          permanentMeetInvalidatedAt: null
+          permanentMeetInvalidatedAt: null,
         },
-        $inc: { permanentMeetUsageCount: 1 }
+        $inc: { permanentMeetUsageCount: 1 },
       }
     );
 
     console.log(JSON.stringify({
-      event: hadExisting || forceNew ? 'google_meet_permanent_link_regenerated' : 'google_meet_permanent_link_assigned',
+      event: hadExisting || forceNew
+        ? 'google_meet_permanent_link_regenerated'
+        : 'google_meet_permanent_link_assigned',
       tutorId: String(tutor._id),
       calendarEventId,
-      meetingId
+      meetingId,
     }));
 
     const updatedTutor = await Tutor.findById(tutor._id);
-    return {
-      meetingId: updatedTutor.permanentMeetMeetingId,
-      joinUrl: updatedTutor.permanentMeetLink,
-      startTime: updatedTutor.permanentMeetLinkCreatedAt,
-      endTime: null,
-      usageCount: updatedTutor.permanentMeetUsageCount,
-      lastUsedAt: updatedTutor.permanentMeetLastUsedAt,
-      invalidatedAt: updatedTutor.permanentMeetInvalidatedAt,
-      calendarEventId: updatedTutor.permanentMeetCalendarEventId
-    };
+    return formatPermanentLinkResponse(updatedTutor);
   } catch (error) {
-    if (error?.code && error?.status) throw error;
-    const mapped = mapGoogleError(error);
-    const mappedError = new Error(mapped.message);
-    mappedError.code = mapped.code;
-    mappedError.status = mapped.status;
-    throw mappedError;
+    throwMapped(error);
   }
 };
 
+const formatPermanentLinkResponse = (tutor) => ({
+  meetingId: tutor.permanentMeetMeetingId,
+  joinUrl: tutor.permanentMeetLink,
+  startTime: tutor.permanentMeetLinkCreatedAt,
+  endTime: null,
+  usageCount: tutor.permanentMeetUsageCount,
+  lastUsedAt: tutor.permanentMeetLastUsedAt,
+  invalidatedAt: tutor.permanentMeetInvalidatedAt,
+  calendarEventId: tutor.permanentMeetCalendarEventId,
+});
+
 export const getGoogleOAuthUrl = ({ redirect, tutorId } = {}) => {
-  const oauth2Client = getOAuthClient({ requireRefreshToken: false });
+  const oauth2Client = getOAuthClient();
   const scopes = getOAuthScopes();
   const state = encodeState({ redirect, tutorId });
   const url = oauth2Client.generateAuthUrl({
     access_type: 'offline',
     prompt: 'consent',
     scope: scopes,
-    state
+    state,
   });
   return { url, scopes };
 };
@@ -353,7 +347,7 @@ export const getGoogleOAuthStatus = async ({ tutorId }) => {
     return { connected: false, expiresAt: null, scopes: [], status: 'missing_token' };
   }
   try {
-    const oauth2Client = getOAuthClient({ requireRefreshToken: false });
+    const oauth2Client = getOAuthClient();
     oauth2Client.setCredentials({ refresh_token: refreshToken });
     const accessTokenResponse = await oauth2Client.getAccessToken();
     const accessToken = accessTokenResponse?.token;
@@ -365,17 +359,14 @@ export const getGoogleOAuthStatus = async ({ tutorId }) => {
       connected: true,
       expiresAt: tokenInfo?.expiry_date || null,
       scopes: tokenInfo?.scopes || [],
-      status: 'connected'
+      status: 'connected',
     };
   } catch (error) {
     const mapped = mapGoogleError(error);
     if (mapped.code === 'AUTH_FAILED') {
       return { connected: false, expiresAt: null, scopes: [], status: 'invalid_grant' };
     }
-    const mappedError = new Error(mapped.message);
-    mappedError.code = mapped.code;
-    mappedError.status = mapped.status;
-    throw mappedError;
+    throwMapped(error);
   }
 };
 
@@ -388,7 +379,7 @@ export const refreshGoogleOAuth = async ({ tutorId }) => {
       error.status = 401;
       throw error;
     }
-    const oauth2Client = getOAuthClient({ requireRefreshToken: false });
+    const oauth2Client = getOAuthClient();
     oauth2Client.setCredentials({ refresh_token: tutor.googleOAuthRefreshToken });
     const accessTokenResponse = await oauth2Client.getAccessToken();
     const accessToken = accessTokenResponse?.token;
@@ -407,15 +398,10 @@ export const refreshGoogleOAuth = async ({ tutorId }) => {
       connected: true,
       expiresAt: tokenInfo?.expiry_date || null,
       scopes: tokenInfo?.scopes || [],
-      status: 'refreshed'
+      status: 'refreshed',
     };
   } catch (error) {
-    if (error?.code && error?.status) throw error;
-    const mapped = mapGoogleError(error);
-    const mappedError = new Error(mapped.message);
-    mappedError.code = mapped.code;
-    mappedError.status = mapped.status;
-    throw mappedError;
+    throwMapped(error);
   }
 };
 
@@ -425,7 +411,7 @@ export const revokeGoogleOAuth = async ({ tutorId }) => {
     if (!tutor?.googleOAuthRefreshToken) {
       return { revoked: true };
     }
-    const oauth2Client = getOAuthClient({ requireRefreshToken: false });
+    const oauth2Client = getOAuthClient();
     oauth2Client.setCredentials({ refresh_token: tutor.googleOAuthRefreshToken });
     await oauth2Client.revokeCredentials();
     await Tutor.updateOne(
@@ -435,18 +421,13 @@ export const revokeGoogleOAuth = async ({ tutorId }) => {
           googleOAuthRefreshToken: null,
           googleOAuthScopes: [],
           googleOAuthExpiresAt: null,
-          googleOAuthRevokedAt: new Date()
-        }
+          googleOAuthRevokedAt: new Date(),
+        },
       }
     );
     return { revoked: true };
   } catch (error) {
-    if (error?.code && error?.status) throw error;
-    const mapped = mapGoogleError(error);
-    const mappedError = new Error(mapped.message);
-    mappedError.code = mapped.code;
-    mappedError.status = mapped.status;
-    throw mappedError;
+    throwMapped(error);
   }
 };
 
@@ -460,7 +441,7 @@ export const handleOAuthCallback = async ({ code, state }) => {
 
   const { tutorId, redirect } = decodeState(state);
   if (!tutorId) {
-    const error = new Error('Missing tutor identity');
+    const error = new Error('Missing tutor identity in OAuth state. Please start the OAuth flow again.');
     error.code = 'AUTH_FAILED';
     error.status = 400;
     throw error;
@@ -475,11 +456,11 @@ export const handleOAuthCallback = async ({ code, state }) => {
   }
 
   try {
-    const oauth2Client = getOAuthClient({ requireRefreshToken: false });
+    const oauth2Client = getOAuthClient();
     const { tokens } = await oauth2Client.getToken(code);
     const refreshToken = tokens?.refresh_token || tutor.googleOAuthRefreshToken;
     if (!refreshToken) {
-      const error = new Error('Refresh token not received');
+      const error = new Error('Refresh token not received. Please revoke access and reconnect.');
       error.code = 'AUTH_FAILED';
       error.status = 401;
       throw error;
@@ -493,18 +474,13 @@ export const handleOAuthCallback = async ({ code, state }) => {
           googleOAuthScopes: tokens?.scope ? tokens.scope.split(' ') : tutor.googleOAuthScopes,
           googleOAuthExpiresAt: tokens?.expiry_date || tutor.googleOAuthExpiresAt || null,
           googleOAuthConnectedAt: new Date(),
-          googleOAuthRevokedAt: null
-        }
+          googleOAuthRevokedAt: null,
+        },
       }
     );
 
     return { redirectUrl: redirect || process.env.FRONTEND_URL || '/' };
   } catch (error) {
-    if (error?.code && error?.status) throw error;
-    const mapped = mapGoogleError(error);
-    const mappedError = new Error(mapped.message);
-    mappedError.code = mapped.code;
-    mappedError.status = mapped.status;
-    throw mappedError;
+    throwMapped(error);
   }
 };
