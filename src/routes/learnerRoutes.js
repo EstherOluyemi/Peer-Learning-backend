@@ -7,6 +7,7 @@ import {
   enrollInCourse,
   getMyProgress,
   updateProgress,
+  getMySessions,
   getAssessmentDetails,
   submitAssessment,
   getPeers,
@@ -38,6 +39,9 @@ router.route('/me/progress')
 
 router.route('/me/progress/:courseId')
   .patch(updateProgress);
+
+router.route('/sessions')
+  .get(getMySessions);
 
 // Course Interactions
 router.route('/courses/:id/enroll')

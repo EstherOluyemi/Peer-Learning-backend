@@ -21,6 +21,7 @@ import AssessmentSubmission from '../models/AssessmentSubmission.js';
 import Message from '../models/Message.js';
 import User from '../models/User.js';
 import LearnerProfile from '../models/LearnerProfile.js';
+import Session from '../models/Session.js';
 import { sendSuccess, sendError } from '../middleware/responseHandler.js';
 
 // --- Profile Management ---
@@ -107,6 +108,39 @@ export const updateProgress = async (req, res) => {
     return sendSuccess(res, progress);
   } catch (error) {
     return sendError(res, error.message, 'UPDATE_PROGRESS_FAILED', 500);
+  }
+};
+
+export const getMySessions = async (req, res) => {
+  try {
+    const { status, startDate, endDate } = req.query;
+    const enrollments = await Enrollment.find({
+      learnerId: req.user._id,
+      status: { $ne: 'dropped' }
+    }).select('courseId');
+
+    const courseIds = enrollments.map(enrollment => enrollment.courseId);
+    const orConditions = [{ studentIds: req.user._id }];
+    if (courseIds.length > 0) {
+      orConditions.push({ courseId: { $in: courseIds } });
+    }
+
+    const query = { $or: orConditions };
+    if (status) query.status = status;
+    if (startDate || endDate) {
+      query.startTime = {};
+      if (startDate) query.startTime.$gte = new Date(startDate);
+      if (endDate) query.startTime.$lte = new Date(endDate);
+    }
+
+    const sessions = await Session.find(query)
+      .populate('courseId')
+      .populate({ path: 'tutorId', populate: { path: 'userId', select: 'name email role' } })
+      .sort({ startTime: -1 });
+
+    return sendSuccess(res, sessions);
+  } catch (error) {
+    return sendError(res, error.message, 'FETCH_SESSIONS_FAILED', 500);
   }
 };
 
