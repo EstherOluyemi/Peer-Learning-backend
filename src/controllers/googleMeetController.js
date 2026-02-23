@@ -1,4 +1,4 @@
-import { createGoogleMeetMeeting } from '../services/googleMeetService.js';
+import { createGoogleMeetMeeting, getOrCreatePermanentGoogleMeetLink } from '../services/googleMeetService.js';
 import { sendSuccess, sendError } from '../middleware/responseHandler.js';
 
 export const createMeeting = async (req, res) => {
@@ -22,6 +22,41 @@ export const createMeeting = async (req, res) => {
       scheduledTime,
       meetingTitle,
       durationMinutes
+    });
+
+    return sendSuccess(res, meeting, 201);
+  } catch (error) {
+    return sendError(res, error.message, error.code || 'GOOGLE_MEET_FAILED', error.status || 500);
+  }
+};
+
+export const getPermanentLink = async (req, res) => {
+  try {
+    const {
+      tutorId,
+      scheduledTime,
+      meetingTitle,
+      durationMinutes,
+      forceNew
+    } = req.body;
+
+    const resolvedTutorId = tutorId || req.tutor?._id;
+    const missingFields = ['tutorId'].filter((field) => !resolvedTutorId);
+
+    if (missingFields.length > 0) {
+      return sendError(res, 'Missing required fields: tutorId', 'MISSING_FIELDS', 400);
+    }
+
+    if (req.tutor && String(req.tutor._id) !== String(resolvedTutorId)) {
+      return sendError(res, 'Tutor does not match authenticated user', 'TUTOR_MISMATCH', 403);
+    }
+
+    const meeting = await getOrCreatePermanentGoogleMeetLink({
+      tutorId: resolvedTutorId,
+      meetingTitle: meetingTitle || 'Permanent Tutor Room',
+      scheduledTime,
+      durationMinutes,
+      forceNew: Boolean(forceNew)
     });
 
     return sendSuccess(res, meeting, 201);

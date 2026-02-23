@@ -101,6 +101,7 @@ import User from '../models/User.js';
 import Payment from '../models/Payment.js';
 import Review from '../models/Review.js';
 import { sendSuccess, sendError } from '../middleware/responseHandler.js';
+import { getOrCreatePermanentGoogleMeetLink } from '../services/googleMeetService.js';
 
 // --- Profile Management ---
 export const getMyProfile = async (req, res) => {
@@ -129,7 +130,18 @@ export const updateMyProfile = async (req, res) => {
 // --- Session Scheduling ---
 export const createSession = async (req, res) => {
   try {
-    const { title, subject, courseId, startTime, endTime, meetingLink, maxParticipants } = req.body;
+    const { title, subject, courseId, startTime, endTime, maxParticipants } = req.body;
+    const durationMinutes = startTime && endTime
+      ? Math.max(1, Math.ceil((new Date(endTime).getTime() - new Date(startTime).getTime()) / 60000))
+      : 60;
+
+    const permanentLink = await getOrCreatePermanentGoogleMeetLink({
+      tutorId: req.tutor._id,
+      meetingTitle: title || subject || 'Tutor Session',
+      scheduledTime: startTime,
+      durationMinutes
+    });
+
     const session = await Session.create({
       title,
       subject,
@@ -137,7 +149,7 @@ export const createSession = async (req, res) => {
       tutorId: req.tutor._id,
       startTime,
       endTime,
-      meetingLink,
+      meetingLink: permanentLink.joinUrl,
       maxParticipants
     });
     return sendSuccess(res, session, 201);

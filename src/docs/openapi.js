@@ -194,13 +194,35 @@ export default {
           durationMinutes: 60
         }
       },
+      GoogleMeetPermanentLinkRequest: {
+        type: 'object',
+        required: ['tutorId'],
+        properties: {
+          tutorId: { type: 'string' },
+          scheduledTime: { type: 'string', format: 'date-time' },
+          meetingTitle: { type: 'string' },
+          durationMinutes: { type: 'number', example: 60 },
+          forceNew: { type: 'boolean', example: false }
+        },
+        example: {
+          tutorId: '64f123abc123abc123abc123',
+          scheduledTime: '2026-02-28T10:00:00.000Z',
+          meetingTitle: 'Permanent Tutor Room',
+          durationMinutes: 60,
+          forceNew: false
+        }
+      },
       GoogleMeetMeetingResponse: {
         type: 'object',
         properties: {
           meetingId: { type: 'string' },
           joinUrl: { type: 'string' },
           startTime: { type: 'string', format: 'date-time' },
-          endTime: { type: 'string', format: 'date-time' }
+          endTime: { type: 'string', format: 'date-time' },
+          usageCount: { type: 'number' },
+          lastUsedAt: { type: 'string', format: 'date-time' },
+          invalidatedAt: { type: 'string', format: 'date-time' },
+          calendarEventId: { type: 'string' }
         }
       }
     }
@@ -312,6 +334,33 @@ export default {
         responses: {
           201: {
             description: 'Meeting created',
+            content: {
+              'application/json': {
+                schema: {
+                  allOf: [
+                    { $ref: '#/components/schemas/SuccessResponse' },
+                    { type: 'object', properties: { data: { $ref: '#/components/schemas/GoogleMeetMeetingResponse' } } }
+                  ]
+                }
+              }
+            }
+          },
+          400: { description: 'Validation error', content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } } },
+          401: { description: 'Authentication failed', content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } } },
+          403: { description: 'Permission denied', content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } } },
+          429: { description: 'Quota exceeded', content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+        }
+      }
+    },
+    '/v1/tutor/google-meet/permanent-link': {
+      post: {
+        tags: ['Tutor Google Meet'],
+        summary: 'Get or create permanent Google Meet link',
+        security: [{ bearerAuth: [], cookieAuth: [] }],
+        requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/GoogleMeetPermanentLinkRequest' } } } },
+        responses: {
+          201: {
+            description: 'Permanent link',
             content: {
               'application/json': {
                 schema: {

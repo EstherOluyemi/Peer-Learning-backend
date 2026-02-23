@@ -20,7 +20,7 @@ import {
   respondToReview,
   getReviewAnalytics
 } from '../controllers/tutorController.js';
-import { createMeeting } from '../controllers/googleMeetController.js';
+import { createMeeting, getPermanentLink } from '../controllers/googleMeetController.js';
 
 import { protect, tutorOnly } from '../middleware/authMiddleware.js';
 
@@ -45,6 +45,7 @@ router.route('/messages/:userId')
 router.use(tutorOnly);
 
 router.post('/google-meet/create-meeting', createMeeting);
+router.post('/google-meet/permanent-link', getPermanentLink);
 
 // Profile
 router.route('/me')

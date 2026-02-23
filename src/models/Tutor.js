@@ -11,6 +11,13 @@ const tutorSchema = new mongoose.Schema({
     day: { type: String, enum: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'] },
     slots: [{ startTime: String, endTime: String }]
   }],
+  permanentMeetLink: { type: String },
+  permanentMeetMeetingId: { type: String },
+  permanentMeetCalendarEventId: { type: String },
+  permanentMeetLinkCreatedAt: { type: Date },
+  permanentMeetLastUsedAt: { type: Date },
+  permanentMeetUsageCount: { type: Number, default: 0 },
+  permanentMeetInvalidatedAt: { type: Date },
   hourlyRate: { type: Number, default: 0 },
   verified: { type: Boolean, default: false }
 }, { timestamps: true });
