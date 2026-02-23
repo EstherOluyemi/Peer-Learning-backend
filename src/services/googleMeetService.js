@@ -26,8 +26,10 @@ const getOAuthClient = ({ requireRefreshToken = true } = {}) => {
 const mapGoogleError = (error) => {
   const status = error?.response?.status;
   const reason = error?.response?.data?.error?.errors?.[0]?.reason;
-  const message = error?.response?.data?.error?.message || error.message;
+  const oauthError = error?.response?.data?.error;
+  const message = error?.response?.data?.error?.message || error?.response?.data?.error_description || error.message;
 
+  if (oauthError === 'invalid_grant') return { status: 401, code: 'AUTH_FAILED', message };
   if (status === 401) return { status: 401, code: 'AUTH_FAILED', message };
   if (status === 403 && reason === 'quotaExceeded') return { status: 429, code: 'QUOTA_EXCEEDED', message };
   if (status === 403) return { status: 403, code: 'PERMISSION_DENIED', message };
@@ -64,8 +66,11 @@ const validateTimeSlot = (scheduledTime, durationMinutes) => {
   return { startTime, endTime };
 };
 
-const buildCalendarClient = () => {
-  const auth = getOAuthClient();
+const buildCalendarClient = (refreshToken) => {
+  const auth = getOAuthClient({ requireRefreshToken: true });
+  if (refreshToken) {
+    auth.setCredentials({ refresh_token: refreshToken });
+  }
   return google.calendar({ version: 'v3', auth });
 };
 
@@ -77,8 +82,24 @@ const getOAuthScopes = () => {
   return ['https://www.googleapis.com/auth/calendar.events'];
 };
 
-const createCalendarEventWithMeet = async ({ summary, startTime, endTime }) => {
-  const calendar = buildCalendarClient();
+const encodeState = (payload) => Buffer.from(JSON.stringify(payload)).toString('base64url');
+const decodeState = (value) => {
+  if (!value) return {};
+  try {
+    return JSON.parse(Buffer.from(value, 'base64url').toString('utf-8'));
+  } catch {
+    return {};
+  }
+};
+
+const createCalendarEventWithMeet = async ({ summary, startTime, endTime, refreshToken }) => {
+  if (!refreshToken) {
+    const error = new Error('Google account is not connected');
+    error.code = 'AUTH_FAILED';
+    error.status = 401;
+    throw error;
+  }
+  const calendar = buildCalendarClient(refreshToken);
   const calendarId = process.env.GOOGLE_CALENDAR_ID || 'primary';
   const requestId = crypto.randomUUID();
 
@@ -116,8 +137,11 @@ const createCalendarEventWithMeet = async ({ summary, startTime, endTime }) => {
   };
 };
 
-const validatePermanentLink = async ({ calendarEventId }) => {
-  const calendar = buildCalendarClient();
+const validatePermanentLink = async ({ calendarEventId, refreshToken }) => {
+  if (!refreshToken) {
+    return { valid: false, reason: 'MEETING_LINK_INVALID' };
+  }
+  const calendar = buildCalendarClient(refreshToken);
   const calendarId = process.env.GOOGLE_CALENDAR_ID || 'primary';
 
   try {
@@ -154,10 +178,18 @@ export const createGoogleMeetMeeting = async ({
   const { startTime, endTime } = validateTimeSlot(scheduledTime, durationMinutes);
 
   try {
+    const tutor = await Tutor.findById(tutorId);
+    if (!tutor || !tutor.googleOAuthRefreshToken) {
+      const error = new Error('Google account is not connected');
+      error.code = 'AUTH_FAILED';
+      error.status = 401;
+      throw error;
+    }
     const { joinUrl, meetingId, calendarEventId } = await createCalendarEventWithMeet({
       summary: meetingTitle,
       startTime,
-      endTime
+      endTime,
+      refreshToken: tutor.googleOAuthRefreshToken
     });
 
     const meetingDoc = await GoogleMeetMeeting.create({
@@ -205,7 +237,10 @@ export const getOrCreatePermanentGoogleMeetLink = async ({
   const now = new Date();
   const hadExisting = Boolean(tutor.permanentMeetLink);
   if (!forceNew && tutor.permanentMeetLink && tutor.permanentMeetCalendarEventId && !tutor.permanentMeetInvalidatedAt) {
-    const validation = await validatePermanentLink({ calendarEventId: tutor.permanentMeetCalendarEventId });
+    const validation = await validatePermanentLink({
+      calendarEventId: tutor.permanentMeetCalendarEventId,
+      refreshToken: tutor.googleOAuthRefreshToken
+    });
     if (validation.valid) {
       await Tutor.updateOne(
         { _id: tutor._id },
@@ -251,7 +286,8 @@ export const getOrCreatePermanentGoogleMeetLink = async ({
     const { joinUrl, meetingId, calendarEventId } = await createCalendarEventWithMeet({
       summary: meetingTitle || 'Permanent Tutor Room',
       startTime,
-      endTime
+      endTime,
+      refreshToken: tutor.googleOAuthRefreshToken
     });
 
     await Tutor.updateOne(
@@ -297,25 +333,28 @@ export const getOrCreatePermanentGoogleMeetLink = async ({
   }
 };
 
-export const getGoogleOAuthUrl = ({ redirect } = {}) => {
+export const getGoogleOAuthUrl = ({ redirect, tutorId } = {}) => {
   const oauth2Client = getOAuthClient({ requireRefreshToken: false });
   const scopes = getOAuthScopes();
+  const state = encodeState({ redirect, tutorId });
   const url = oauth2Client.generateAuthUrl({
     access_type: 'offline',
     prompt: 'consent',
     scope: scopes,
-    state: redirect ? encodeURIComponent(redirect) : undefined
+    state
   });
   return { url, scopes };
 };
 
-export const getGoogleOAuthStatus = async () => {
-  const refreshToken = process.env.GOOGLE_REFRESH_TOKEN;
+export const getGoogleOAuthStatus = async ({ tutorId }) => {
+  const tutor = await Tutor.findById(tutorId);
+  const refreshToken = tutor?.googleOAuthRefreshToken;
   if (!refreshToken) {
     return { connected: false, expiresAt: null, scopes: [], status: 'missing_token' };
   }
   try {
-    const oauth2Client = getOAuthClient();
+    const oauth2Client = getOAuthClient({ requireRefreshToken: false });
+    oauth2Client.setCredentials({ refresh_token: refreshToken });
     const accessTokenResponse = await oauth2Client.getAccessToken();
     const accessToken = accessTokenResponse?.token;
     if (!accessToken) {
@@ -330,6 +369,9 @@ export const getGoogleOAuthStatus = async () => {
     };
   } catch (error) {
     const mapped = mapGoogleError(error);
+    if (mapped.code === 'AUTH_FAILED') {
+      return { connected: false, expiresAt: null, scopes: [], status: 'invalid_grant' };
+    }
     const mappedError = new Error(mapped.message);
     mappedError.code = mapped.code;
     mappedError.status = mapped.status;
@@ -337,9 +379,17 @@ export const getGoogleOAuthStatus = async () => {
   }
 };
 
-export const refreshGoogleOAuth = async () => {
+export const refreshGoogleOAuth = async ({ tutorId }) => {
   try {
-    const oauth2Client = getOAuthClient();
+    const tutor = await Tutor.findById(tutorId);
+    if (!tutor?.googleOAuthRefreshToken) {
+      const error = new Error('Google account is not connected');
+      error.code = 'AUTH_FAILED';
+      error.status = 401;
+      throw error;
+    }
+    const oauth2Client = getOAuthClient({ requireRefreshToken: false });
+    oauth2Client.setCredentials({ refresh_token: tutor.googleOAuthRefreshToken });
     const accessTokenResponse = await oauth2Client.getAccessToken();
     const accessToken = accessTokenResponse?.token;
     if (!accessToken) {
@@ -349,6 +399,10 @@ export const refreshGoogleOAuth = async () => {
       throw error;
     }
     const tokenInfo = await oauth2Client.getTokenInfo(accessToken);
+    await Tutor.updateOne(
+      { _id: tutor._id },
+      { $set: { googleOAuthExpiresAt: tokenInfo?.expiry_date || null, googleOAuthRevokedAt: null } }
+    );
     return {
       connected: true,
       expiresAt: tokenInfo?.expiry_date || null,
@@ -365,11 +419,86 @@ export const refreshGoogleOAuth = async () => {
   }
 };
 
-export const revokeGoogleOAuth = async () => {
+export const revokeGoogleOAuth = async ({ tutorId }) => {
   try {
-    const oauth2Client = getOAuthClient();
+    const tutor = await Tutor.findById(tutorId);
+    if (!tutor?.googleOAuthRefreshToken) {
+      return { revoked: true };
+    }
+    const oauth2Client = getOAuthClient({ requireRefreshToken: false });
+    oauth2Client.setCredentials({ refresh_token: tutor.googleOAuthRefreshToken });
     await oauth2Client.revokeCredentials();
+    await Tutor.updateOne(
+      { _id: tutor._id },
+      {
+        $set: {
+          googleOAuthRefreshToken: null,
+          googleOAuthScopes: [],
+          googleOAuthExpiresAt: null,
+          googleOAuthRevokedAt: new Date()
+        }
+      }
+    );
     return { revoked: true };
+  } catch (error) {
+    if (error?.code && error?.status) throw error;
+    const mapped = mapGoogleError(error);
+    const mappedError = new Error(mapped.message);
+    mappedError.code = mapped.code;
+    mappedError.status = mapped.status;
+    throw mappedError;
+  }
+};
+
+export const handleOAuthCallback = async ({ code, state }) => {
+  if (!code) {
+    const error = new Error('Missing authorization code');
+    error.code = 'AUTH_FAILED';
+    error.status = 400;
+    throw error;
+  }
+
+  const { tutorId, redirect } = decodeState(state);
+  if (!tutorId) {
+    const error = new Error('Missing tutor identity');
+    error.code = 'AUTH_FAILED';
+    error.status = 400;
+    throw error;
+  }
+
+  const tutor = await Tutor.findById(tutorId);
+  if (!tutor) {
+    const error = new Error('Tutor not found');
+    error.code = 'TUTOR_NOT_FOUND';
+    error.status = 404;
+    throw error;
+  }
+
+  try {
+    const oauth2Client = getOAuthClient({ requireRefreshToken: false });
+    const { tokens } = await oauth2Client.getToken(code);
+    const refreshToken = tokens?.refresh_token || tutor.googleOAuthRefreshToken;
+    if (!refreshToken) {
+      const error = new Error('Refresh token not received');
+      error.code = 'AUTH_FAILED';
+      error.status = 401;
+      throw error;
+    }
+
+    await Tutor.updateOne(
+      { _id: tutor._id },
+      {
+        $set: {
+          googleOAuthRefreshToken: refreshToken,
+          googleOAuthScopes: tokens?.scope ? tokens.scope.split(' ') : tutor.googleOAuthScopes,
+          googleOAuthExpiresAt: tokens?.expiry_date || tutor.googleOAuthExpiresAt || null,
+          googleOAuthConnectedAt: new Date(),
+          googleOAuthRevokedAt: null
+        }
+      }
+    );
+
+    return { redirectUrl: redirect || process.env.FRONTEND_URL || '/' };
   } catch (error) {
     if (error?.code && error?.status) throw error;
     const mapped = mapGoogleError(error);

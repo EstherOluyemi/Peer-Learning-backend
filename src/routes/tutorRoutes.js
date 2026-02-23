@@ -26,7 +26,8 @@ import {
   startOAuth,
   oauthStatus,
   refreshOAuth,
-  revokeOAuth
+  revokeOAuth,
+  oauthCallback
 } from '../controllers/googleMeetController.js';
 
 import { protect, tutorOnly } from '../middleware/authMiddleware.js';
@@ -37,6 +38,8 @@ const router = express.Router();
 router.post('/auth/register', registerTutor);
 router.post('/auth/login', loginTutor);
 router.post('/auth/logout', logoutTutor);
+
+router.get('/google-meet/oauth/callback', oauthCallback);
 
 // --- Protected Routes (Must be Logged In) ---
 router.use(protect);

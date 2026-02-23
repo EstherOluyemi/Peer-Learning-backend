@@ -4,7 +4,8 @@ import {
   getGoogleOAuthUrl,
   getGoogleOAuthStatus,
   refreshGoogleOAuth,
-  revokeGoogleOAuth
+  revokeGoogleOAuth,
+  handleOAuthCallback
 } from '../services/googleMeetService.js';
 import { sendSuccess, sendError } from '../middleware/responseHandler.js';
 
@@ -75,7 +76,7 @@ export const getPermanentLink = async (req, res) => {
 export const startOAuth = async (req, res) => {
   try {
     const { redirect } = req.query;
-    const payload = getGoogleOAuthUrl({ redirect });
+    const payload = getGoogleOAuthUrl({ redirect, tutorId: req.tutor?._id });
     return sendSuccess(res, payload);
   } catch (error) {
     return sendError(res, error.message, error.code || 'GOOGLE_OAUTH_FAILED', error.status || 500);
@@ -84,7 +85,7 @@ export const startOAuth = async (req, res) => {
 
 export const oauthStatus = async (req, res) => {
   try {
-    const payload = await getGoogleOAuthStatus();
+    const payload = await getGoogleOAuthStatus({ tutorId: req.tutor?._id });
     return sendSuccess(res, payload);
   } catch (error) {
     return sendError(res, error.message, error.code || 'GOOGLE_OAUTH_FAILED', error.status || 500);
@@ -93,7 +94,7 @@ export const oauthStatus = async (req, res) => {
 
 export const refreshOAuth = async (req, res) => {
   try {
-    const payload = await refreshGoogleOAuth();
+    const payload = await refreshGoogleOAuth({ tutorId: req.tutor?._id });
     return sendSuccess(res, payload);
   } catch (error) {
     return sendError(res, error.message, error.code || 'GOOGLE_OAUTH_FAILED', error.status || 500);
@@ -102,8 +103,18 @@ export const refreshOAuth = async (req, res) => {
 
 export const revokeOAuth = async (req, res) => {
   try {
-    const payload = await revokeGoogleOAuth();
+    const payload = await revokeGoogleOAuth({ tutorId: req.tutor?._id });
     return sendSuccess(res, payload);
+  } catch (error) {
+    return sendError(res, error.message, error.code || 'GOOGLE_OAUTH_FAILED', error.status || 500);
+  }
+};
+
+export const oauthCallback = async (req, res) => {
+  try {
+    const { code, state } = req.query;
+    const payload = await handleOAuthCallback({ code, state });
+    return res.redirect(payload.redirectUrl);
   } catch (error) {
     return sendError(res, error.message, error.code || 'GOOGLE_OAUTH_FAILED', error.status || 500);
   }

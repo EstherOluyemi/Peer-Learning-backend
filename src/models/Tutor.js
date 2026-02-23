@@ -18,6 +18,11 @@ const tutorSchema = new mongoose.Schema({
   permanentMeetLastUsedAt: { type: Date },
   permanentMeetUsageCount: { type: Number, default: 0 },
   permanentMeetInvalidatedAt: { type: Date },
+  googleOAuthRefreshToken: { type: String },
+  googleOAuthScopes: [{ type: String }],
+  googleOAuthExpiresAt: { type: Number },
+  googleOAuthConnectedAt: { type: Date },
+  googleOAuthRevokedAt: { type: Date },
   hourlyRate: { type: Number, default: 0 },
   verified: { type: Boolean, default: false }
 }, { timestamps: true });

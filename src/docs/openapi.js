@@ -426,6 +426,20 @@ export default {
         }
       }
     },
+    '/v1/tutor/google-meet/oauth/callback': {
+      get: {
+        tags: ['Tutor Google Meet'],
+        summary: 'Google OAuth callback',
+        parameters: [
+          { name: 'code', in: 'query', required: true, schema: { type: 'string' } },
+          { name: 'state', in: 'query', schema: { type: 'string' } }
+        ],
+        responses: {
+          302: { description: 'Redirect to client' },
+          400: { description: 'OAuth error', content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+        }
+      }
+    },
     '/v1/tutor/google-meet/oauth/status': {
       get: {
         tags: ['Tutor Google Meet'],
