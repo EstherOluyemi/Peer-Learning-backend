@@ -1,3 +1,4 @@
+// src/controllers/tutorAuthController.js
 import User from '../models/User.js';
 import Tutor from '../models/Tutor.js';
 import jwt from 'jsonwebtoken';

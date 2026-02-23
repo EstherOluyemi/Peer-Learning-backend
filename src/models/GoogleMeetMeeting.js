@@ -1,3 +1,4 @@
+// src/models/GoogleMeetMeeting.js
 import mongoose from "mongoose";
 
 const googleMeetMeetingSchema = new mongoose.Schema(

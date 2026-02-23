@@ -1,105 +1,10 @@
-// Get all conversations for the logged-in tutor
-export const getConversations = async (req, res) => {
-  try {
-    // Find all messages where the tutor is sender or receiver
-    const myId = req.user._id;
-    // Find all students who have messaged or been messaged by this tutor
-    const messages = await Message.find({
-      $or: [
-        { senderId: myId },
-        { receiverId: myId }
-      ]
-    }).sort({ createdAt: 1 }).populate('senderId', 'name email avatar').populate('receiverId', 'name email avatar');
-
-    // Group messages by student (other participant)
-    const conversationsMap = new Map();
-    messages.forEach(msg => {
-      // Find the student (not the tutor)
-      let student = null;
-      if (String(msg.senderId._id) !== String(myId)) student = msg.senderId;
-      if (String(msg.receiverId._id) !== String(myId)) student = msg.receiverId;
-      if (!student) return;
-      const key = String(student._id);
-      if (!conversationsMap.has(key)) {
-        conversationsMap.set(key, {
-          student,
-          messages: [],
-          lastMessage: '',
-          timestamp: '',
-          unread: 0
-        });
-      }
-      conversationsMap.get(key).messages.push({
-        id: msg._id,
-        text: msg.message,
-        sender: String(msg.senderId._id) === String(myId) ? 'tutor' : 'student',
-        timestamp: msg.createdAt,
-        read: msg.isRead
-      });
-    });
-    // Set lastMessage, timestamp, unread count
-    conversationsMap.forEach(conv => {
-      if (conv.messages.length > 0) {
-        const lastMsg = conv.messages[conv.messages.length - 1];
-        conv.lastMessage = lastMsg.text;
-        conv.timestamp = lastMsg.timestamp;
-        conv.unread = conv.messages.filter(m => !m.read && m.sender === 'student').length;
-      }
-    });
-    return sendSuccess(res, Array.from(conversationsMap.values()));
-  } catch (error) {
-    return sendError(res, error.message, 'FETCH_CONVERSATIONS_FAILED', 500);
-  }
-};
-import Message from '../models/Message.js';
-// Fetch all messages between the logged-in tutor and another user
-export const getMessages = async (req, res) => {
-  try {
-    const otherUserId = req.params.userId;
-    const myId = req.user._id;
-    const messages = await Message.find({
-      $or: [
-        { senderId: myId, receiverId: otherUserId },
-        { senderId: otherUserId, receiverId: myId }
-      ]
-    }).sort({ createdAt: 1 });
-    return sendSuccess(res, messages);
-  } catch (error) {
-    return sendError(res, error.message, 'FETCH_MESSAGES_FAILED', 500);
-  }
-};
-
-export const sendMessage = async (req, res) => {
-  try {
-    const { receiverId, message } = req.body;
-    const newMessage = await Message.create({
-      senderId: req.user._id,
-      receiverId,
-      message
-    });
-
-    return sendSuccess(res, newMessage, 201);
-  } catch (error) {
-    return sendError(res, error.message, 'SEND_MESSAGE_FAILED', 500);
-  }
-};
-// Fetch a single session by ID
-export const getSession = async (req, res) => {
-  try {
-    const session = await Session.findOne({ _id: req.params.id, tutorId: req.tutor._id })
-      .populate('courseId')
-      .populate('studentIds', 'name email');
-    if (!session) return sendError(res, 'Session not found', 'SESSION_NOT_FOUND', 404);
-    return sendSuccess(res, session);
-  } catch (error) {
-    return sendError(res, error.message, 'FETCH_SESSION_FAILED', 500);
-  }
-};
+// src/controllers/tutorController.js
 import Tutor from '../models/Tutor.js';
 import Session from '../models/Session.js';
 import User from '../models/User.js';
 import Payment from '../models/Payment.js';
 import Review from '../models/Review.js';
+import Message from '../models/Message.js';
 import { sendSuccess, sendError } from '../middleware/responseHandler.js';
 import { getOrCreatePermanentGoogleMeetLink } from '../services/googleMeetService.js';
 
@@ -130,28 +35,63 @@ export const updateMyProfile = async (req, res) => {
 // --- Session Scheduling ---
 export const createSession = async (req, res) => {
   try {
-    const { title, subject, courseId, startTime, endTime, maxParticipants } = req.body;
-    const durationMinutes = startTime && endTime
-      ? Math.max(1, Math.ceil((new Date(endTime).getTime() - new Date(startTime).getTime()) / 60000))
-      : 60;
+    const {
+      title,
+      subject,
+      description,
+      courseId,
+      startTime,
+      endTime,
+      maxParticipants,
+      // FIX: Accept meetingLink from frontend (already created by googleMeetService)
+      // If frontend sends a pre-generated link, use it directly.
+      // Only auto-generate if no link was provided AND Google is connected.
+      meetingLink: clientMeetingLink,
+      meetingProvider,
+      meetingId: clientMeetingId,
+    } = req.body;
 
-    const permanentLink = await getOrCreatePermanentGoogleMeetLink({
-      tutorId: req.tutor._id,
-      meetingTitle: title || subject || 'Tutor Session',
-      scheduledTime: startTime,
-      durationMinutes
-    });
+    let meetingLink = clientMeetingLink || null;
+    let meetingId = clientMeetingId || null;
+
+    // Only auto-generate a Meet link if:
+    // - frontend didn't already provide one
+    // - tutor has Google OAuth connected
+    if (!meetingLink && req.tutor.googleOAuthRefreshToken) {
+      try {
+        const durationMinutes = startTime && endTime
+          ? Math.max(1, Math.ceil((new Date(endTime).getTime() - new Date(startTime).getTime()) / 60000))
+          : 60;
+
+        const permanentLink = await getOrCreatePermanentGoogleMeetLink({
+          tutorId: req.tutor._id,
+          meetingTitle: title || subject || 'Tutor Session',
+          scheduledTime: startTime,
+          durationMinutes
+        });
+
+        meetingLink = permanentLink.joinUrl || null;
+        meetingId = permanentLink.meetingId || null;
+      } catch (meetErr) {
+        // Don't fail session creation if Meet link generation fails
+        console.error('Google Meet auto-generation failed (non-fatal):', meetErr.message);
+      }
+    }
 
     const session = await Session.create({
       title,
       subject,
-      courseId,
+      description: description || '',
+      courseId: courseId || undefined,
       tutorId: req.tutor._id,
       startTime,
       endTime,
-      meetingLink: permanentLink.joinUrl,
-      maxParticipants
+      meetingLink: meetingLink || undefined,
+      meetingProvider: meetingLink ? (meetingProvider || 'google_meet') : undefined,
+      meetingId: meetingId || undefined,
+      maxParticipants: maxParticipants || 1,
     });
+
     return sendSuccess(res, session, 201);
   } catch (error) {
     return sendError(res, error.message, 'CREATE_SESSION_FAILED', 500);
@@ -170,10 +110,25 @@ export const getSessions = async (req, res) => {
       if (endDate) query.startTime.$lte = new Date(endDate);
     }
 
-    const sessions = await Session.find(query).populate('courseId').populate('studentIds', 'name email');
+    const sessions = await Session.find(query)
+      .populate('courseId')
+      .populate('studentIds', 'name email')
+      .sort({ startTime: -1 });
     return sendSuccess(res, sessions);
   } catch (error) {
     return sendError(res, error.message, 'FETCH_SESSIONS_FAILED', 500);
+  }
+};
+
+export const getSession = async (req, res) => {
+  try {
+    const session = await Session.findOne({ _id: req.params.id, tutorId: req.tutor._id })
+      .populate('courseId')
+      .populate('studentIds', 'name email avatar');
+    if (!session) return sendError(res, 'Session not found', 'SESSION_NOT_FOUND', 404);
+    return sendSuccess(res, session);
+  } catch (error) {
+    return sendError(res, error.message, 'FETCH_SESSION_FAILED', 500);
   }
 };
 
@@ -181,9 +136,15 @@ export const updateSession = async (req, res) => {
   try {
     const session = await Session.findOne({ _id: req.params.id, tutorId: req.tutor._id });
     if (!session) return sendError(res, 'Session not found', 'SESSION_NOT_FOUND', 404);
-    Object.keys(req.body).forEach(key => {
-      session[key] = req.body[key];
+
+    // Add meetingProvider and meetingId to allowedFields
+    const allowedFields = ['title', 'subject', 'description', 'startTime', 'endTime', 'maxParticipants', 'meetingLink', 'meetingProvider', 'meetingId', 'status', 'courseId'];
+    allowedFields.forEach(key => {
+      if (req.body[key] !== undefined) {
+        session[key] = req.body[key];
+      }
     });
+
     await session.save();
     return sendSuccess(res, session);
   } catch (error) {
@@ -195,7 +156,7 @@ export const deleteSession = async (req, res) => {
   try {
     const session = await Session.findOne({ _id: req.params.id, tutorId: req.tutor._id });
     if (!session) return sendError(res, 'Session not found', 'SESSION_NOT_FOUND', 404);
-    
+
     if (session.studentIds.length > 0) {
       return sendError(res, 'Cannot delete session with enrolled students', 'DELETE_SESSION_RESTRICTED', 400);
     }
@@ -212,7 +173,7 @@ export const getMyStudents = async (req, res) => {
   try {
     const sessions = await Session.find({ tutorId: req.tutor._id }).populate('studentIds', 'name email');
     const studentsMap = new Map();
-    
+
     sessions.forEach(session => {
       session.studentIds.forEach(student => {
         studentsMap.set(student._id.toString(), student);
@@ -228,11 +189,11 @@ export const getMyStudents = async (req, res) => {
 export const getStudentProgress = async (req, res) => {
   try {
     const { studentId } = req.params;
-    const sessions = await Session.find({ 
-      tutorId: req.tutor._id, 
-      studentIds: studentId 
+    const sessions = await Session.find({
+      tutorId: req.tutor._id,
+      studentIds: studentId
     }).populate('courseId');
-    
+
     return sendSuccess(res, {
       studentId,
       sessionHistory: sessions,
@@ -248,7 +209,7 @@ export const getAnalyticsOverview = async (req, res) => {
   try {
     const totalEarnings = req.tutor.earnings;
     const activeSessions = await Session.countDocuments({ tutorId: req.tutor._id, status: 'scheduled' });
-    
+
     const sessions = await Session.find({ tutorId: req.tutor._id });
     const studentsSet = new Set();
     sessions.forEach(s => s.studentIds.forEach(id => studentsSet.add(id.toString())));
@@ -301,7 +262,6 @@ export const respondToReview = async (req, res) => {
 export const getReviewAnalytics = async (req, res) => {
   try {
     const reviews = await Review.find({ tutorId: req.tutor._id });
-    // Simple sentiment counting for demonstration
     const sentiment = {
       positive: reviews.filter(r => r.rating >= 4).length,
       neutral: reviews.filter(r => r.rating === 3).length,
@@ -310,5 +270,80 @@ export const getReviewAnalytics = async (req, res) => {
     return sendSuccess(res, { reviews, sentiment });
   } catch (error) {
     return sendError(res, error.message, 'FETCH_REVIEW_ANALYTICS_FAILED', 500);
+  }
+};
+
+// --- Messaging ---
+export const getConversations = async (req, res) => {
+  try {
+    const myId = req.user._id;
+    const messages = await Message.find({
+      $or: [{ senderId: myId }, { receiverId: myId }]
+    }).sort({ createdAt: 1 })
+      .populate('senderId', 'name email avatar')
+      .populate('receiverId', 'name email avatar');
+
+    const conversationsMap = new Map();
+    messages.forEach(msg => {
+      let student = null;
+      if (String(msg.senderId._id) !== String(myId)) student = msg.senderId;
+      if (String(msg.receiverId._id) !== String(myId)) student = msg.receiverId;
+      if (!student) return;
+
+      const key = String(student._id);
+      if (!conversationsMap.has(key)) {
+        conversationsMap.set(key, { student, messages: [], lastMessage: '', timestamp: '', unread: 0 });
+      }
+      conversationsMap.get(key).messages.push({
+        id: msg._id,
+        text: msg.message,
+        sender: String(msg.senderId._id) === String(myId) ? 'tutor' : 'student',
+        timestamp: msg.createdAt,
+        read: msg.isRead
+      });
+    });
+
+    conversationsMap.forEach(conv => {
+      if (conv.messages.length > 0) {
+        const lastMsg = conv.messages[conv.messages.length - 1];
+        conv.lastMessage = lastMsg.text;
+        conv.timestamp = lastMsg.timestamp;
+        conv.unread = conv.messages.filter(m => !m.read && m.sender === 'student').length;
+      }
+    });
+
+    return sendSuccess(res, Array.from(conversationsMap.values()));
+  } catch (error) {
+    return sendError(res, error.message, 'FETCH_CONVERSATIONS_FAILED', 500);
+  }
+};
+
+export const getMessages = async (req, res) => {
+  try {
+    const otherUserId = req.params.userId;
+    const myId = req.user._id;
+    const messages = await Message.find({
+      $or: [
+        { senderId: myId, receiverId: otherUserId },
+        { senderId: otherUserId, receiverId: myId }
+      ]
+    }).sort({ createdAt: 1 });
+    return sendSuccess(res, messages);
+  } catch (error) {
+    return sendError(res, error.message, 'FETCH_MESSAGES_FAILED', 500);
+  }
+};
+
+export const sendMessage = async (req, res) => {
+  try {
+    const { receiverId, message } = req.body;
+    const newMessage = await Message.create({
+      senderId: req.user._id,
+      receiverId,
+      message
+    });
+    return sendSuccess(res, newMessage, 201);
+  } catch (error) {
+    return sendError(res, error.message, 'SEND_MESSAGE_FAILED', 500);
   }
 };
