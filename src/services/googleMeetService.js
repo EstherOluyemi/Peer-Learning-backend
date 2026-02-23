@@ -3,13 +3,13 @@ import crypto from 'crypto';
 import GoogleMeetMeeting from '../models/GoogleMeetMeeting.js';
 import Tutor from '../models/Tutor.js';
 
-const getOAuthClient = () => {
+const getOAuthClient = ({ requireRefreshToken = true } = {}) => {
   const clientId = process.env.GOOGLE_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
   const redirectUri = process.env.GOOGLE_REDIRECT_URI;
   const refreshToken = process.env.GOOGLE_REFRESH_TOKEN;
 
-  if (!clientId || !clientSecret || !redirectUri || !refreshToken) {
+  if (!clientId || !clientSecret || !redirectUri || (requireRefreshToken && !refreshToken)) {
     const error = new Error('Google OAuth credentials are not configured');
     error.code = 'AUTH_CONFIGURATION_MISSING';
     error.status = 500;
@@ -17,7 +17,9 @@ const getOAuthClient = () => {
   }
 
   const oauth2Client = new google.auth.OAuth2(clientId, clientSecret, redirectUri);
-  oauth2Client.setCredentials({ refresh_token: refreshToken });
+  if (refreshToken) {
+    oauth2Client.setCredentials({ refresh_token: refreshToken });
+  }
   return oauth2Client;
 };
 
@@ -65,6 +67,14 @@ const validateTimeSlot = (scheduledTime, durationMinutes) => {
 const buildCalendarClient = () => {
   const auth = getOAuthClient();
   return google.calendar({ version: 'v3', auth });
+};
+
+const getOAuthScopes = () => {
+  const rawScopes = process.env.GOOGLE_OAUTH_SCOPES;
+  if (rawScopes) {
+    return rawScopes.split(',').map(scope => scope.trim()).filter(Boolean);
+  }
+  return ['https://www.googleapis.com/auth/calendar.events'];
 };
 
 const createCalendarEventWithMeet = async ({ summary, startTime, endTime }) => {
@@ -277,6 +287,89 @@ export const getOrCreatePermanentGoogleMeetLink = async ({
       invalidatedAt: updatedTutor.permanentMeetInvalidatedAt,
       calendarEventId: updatedTutor.permanentMeetCalendarEventId
     };
+  } catch (error) {
+    if (error?.code && error?.status) throw error;
+    const mapped = mapGoogleError(error);
+    const mappedError = new Error(mapped.message);
+    mappedError.code = mapped.code;
+    mappedError.status = mapped.status;
+    throw mappedError;
+  }
+};
+
+export const getGoogleOAuthUrl = ({ redirect } = {}) => {
+  const oauth2Client = getOAuthClient({ requireRefreshToken: false });
+  const scopes = getOAuthScopes();
+  const url = oauth2Client.generateAuthUrl({
+    access_type: 'offline',
+    prompt: 'consent',
+    scope: scopes,
+    state: redirect ? encodeURIComponent(redirect) : undefined
+  });
+  return { url, scopes };
+};
+
+export const getGoogleOAuthStatus = async () => {
+  const refreshToken = process.env.GOOGLE_REFRESH_TOKEN;
+  if (!refreshToken) {
+    return { connected: false, expiresAt: null, scopes: [], status: 'missing_token' };
+  }
+  try {
+    const oauth2Client = getOAuthClient();
+    const accessTokenResponse = await oauth2Client.getAccessToken();
+    const accessToken = accessTokenResponse?.token;
+    if (!accessToken) {
+      return { connected: false, expiresAt: null, scopes: [], status: 'token_error' };
+    }
+    const tokenInfo = await oauth2Client.getTokenInfo(accessToken);
+    return {
+      connected: true,
+      expiresAt: tokenInfo?.expiry_date || null,
+      scopes: tokenInfo?.scopes || [],
+      status: 'connected'
+    };
+  } catch (error) {
+    const mapped = mapGoogleError(error);
+    const mappedError = new Error(mapped.message);
+    mappedError.code = mapped.code;
+    mappedError.status = mapped.status;
+    throw mappedError;
+  }
+};
+
+export const refreshGoogleOAuth = async () => {
+  try {
+    const oauth2Client = getOAuthClient();
+    const accessTokenResponse = await oauth2Client.getAccessToken();
+    const accessToken = accessTokenResponse?.token;
+    if (!accessToken) {
+      const error = new Error('Failed to refresh access token');
+      error.code = 'AUTH_FAILED';
+      error.status = 401;
+      throw error;
+    }
+    const tokenInfo = await oauth2Client.getTokenInfo(accessToken);
+    return {
+      connected: true,
+      expiresAt: tokenInfo?.expiry_date || null,
+      scopes: tokenInfo?.scopes || [],
+      status: 'refreshed'
+    };
+  } catch (error) {
+    if (error?.code && error?.status) throw error;
+    const mapped = mapGoogleError(error);
+    const mappedError = new Error(mapped.message);
+    mappedError.code = mapped.code;
+    mappedError.status = mapped.status;
+    throw mappedError;
+  }
+};
+
+export const revokeGoogleOAuth = async () => {
+  try {
+    const oauth2Client = getOAuthClient();
+    await oauth2Client.revokeCredentials();
+    return { revoked: true };
   } catch (error) {
     if (error?.code && error?.status) throw error;
     const mapped = mapGoogleError(error);

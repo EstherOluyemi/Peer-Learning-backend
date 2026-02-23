@@ -20,7 +20,14 @@ import {
   respondToReview,
   getReviewAnalytics
 } from '../controllers/tutorController.js';
-import { createMeeting, getPermanentLink } from '../controllers/googleMeetController.js';
+import {
+  createMeeting,
+  getPermanentLink,
+  startOAuth,
+  oauthStatus,
+  refreshOAuth,
+  revokeOAuth
+} from '../controllers/googleMeetController.js';
 
 import { protect, tutorOnly } from '../middleware/authMiddleware.js';
 
@@ -46,6 +53,10 @@ router.use(tutorOnly);
 
 router.post('/google-meet/create-meeting', createMeeting);
 router.post('/google-meet/permanent-link', getPermanentLink);
+router.get('/google-meet/oauth/start', startOAuth);
+router.get('/google-meet/oauth/status', oauthStatus);
+router.post('/google-meet/oauth/refresh', refreshOAuth);
+router.post('/google-meet/oauth/revoke', revokeOAuth);
 
 // Profile
 router.route('/me')

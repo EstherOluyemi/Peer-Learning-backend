@@ -212,6 +212,28 @@ export default {
           forceNew: false
         }
       },
+      GoogleOAuthStartResponse: {
+        type: 'object',
+        properties: {
+          url: { type: 'string' },
+          scopes: { type: 'array', items: { type: 'string' } }
+        }
+      },
+      GoogleOAuthStatusResponse: {
+        type: 'object',
+        properties: {
+          connected: { type: 'boolean' },
+          expiresAt: { type: 'number' },
+          scopes: { type: 'array', items: { type: 'string' } },
+          status: { type: 'string' }
+        }
+      },
+      GoogleOAuthRevokeResponse: {
+        type: 'object',
+        properties: {
+          revoked: { type: 'boolean' }
+        }
+      },
       GoogleMeetMeetingResponse: {
         type: 'object',
         properties: {
@@ -376,6 +398,97 @@ export default {
           401: { description: 'Authentication failed', content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } } },
           403: { description: 'Permission denied', content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } } },
           429: { description: 'Quota exceeded', content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+        }
+      }
+    },
+    '/v1/tutor/google-meet/oauth/start': {
+      get: {
+        tags: ['Tutor Google Meet'],
+        summary: 'Get Google OAuth consent URL',
+        security: [{ bearerAuth: [], cookieAuth: [] }],
+        parameters: [
+          { name: 'redirect', in: 'query', schema: { type: 'string' } }
+        ],
+        responses: {
+          200: {
+            description: 'OAuth URL',
+            content: {
+              'application/json': {
+                schema: {
+                  allOf: [
+                    { $ref: '#/components/schemas/SuccessResponse' },
+                    { type: 'object', properties: { data: { $ref: '#/components/schemas/GoogleOAuthStartResponse' } } }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    '/v1/tutor/google-meet/oauth/status': {
+      get: {
+        tags: ['Tutor Google Meet'],
+        summary: 'Check Google OAuth status',
+        security: [{ bearerAuth: [], cookieAuth: [] }],
+        responses: {
+          200: {
+            description: 'OAuth status',
+            content: {
+              'application/json': {
+                schema: {
+                  allOf: [
+                    { $ref: '#/components/schemas/SuccessResponse' },
+                    { type: 'object', properties: { data: { $ref: '#/components/schemas/GoogleOAuthStatusResponse' } } }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    '/v1/tutor/google-meet/oauth/refresh': {
+      post: {
+        tags: ['Tutor Google Meet'],
+        summary: 'Refresh Google OAuth tokens',
+        security: [{ bearerAuth: [], cookieAuth: [] }],
+        responses: {
+          200: {
+            description: 'Refreshed',
+            content: {
+              'application/json': {
+                schema: {
+                  allOf: [
+                    { $ref: '#/components/schemas/SuccessResponse' },
+                    { type: 'object', properties: { data: { $ref: '#/components/schemas/GoogleOAuthStatusResponse' } } }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    '/v1/tutor/google-meet/oauth/revoke': {
+      post: {
+        tags: ['Tutor Google Meet'],
+        summary: 'Revoke Google OAuth credentials',
+        security: [{ bearerAuth: [], cookieAuth: [] }],
+        responses: {
+          200: {
+            description: 'Revoked',
+            content: {
+              'application/json': {
+                schema: {
+                  allOf: [
+                    { $ref: '#/components/schemas/SuccessResponse' },
+                    { type: 'object', properties: { data: { $ref: '#/components/schemas/GoogleOAuthRevokeResponse' } } }
+                  ]
+                }
+              }
+            }
+          }
         }
       }
     },

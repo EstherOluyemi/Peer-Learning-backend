@@ -1,4 +1,11 @@
-import { createGoogleMeetMeeting, getOrCreatePermanentGoogleMeetLink } from '../services/googleMeetService.js';
+import {
+  createGoogleMeetMeeting,
+  getOrCreatePermanentGoogleMeetLink,
+  getGoogleOAuthUrl,
+  getGoogleOAuthStatus,
+  refreshGoogleOAuth,
+  revokeGoogleOAuth
+} from '../services/googleMeetService.js';
 import { sendSuccess, sendError } from '../middleware/responseHandler.js';
 
 export const createMeeting = async (req, res) => {
@@ -62,5 +69,42 @@ export const getPermanentLink = async (req, res) => {
     return sendSuccess(res, meeting, 201);
   } catch (error) {
     return sendError(res, error.message, error.code || 'GOOGLE_MEET_FAILED', error.status || 500);
+  }
+};
+
+export const startOAuth = async (req, res) => {
+  try {
+    const { redirect } = req.query;
+    const payload = getGoogleOAuthUrl({ redirect });
+    return sendSuccess(res, payload);
+  } catch (error) {
+    return sendError(res, error.message, error.code || 'GOOGLE_OAUTH_FAILED', error.status || 500);
+  }
+};
+
+export const oauthStatus = async (req, res) => {
+  try {
+    const payload = await getGoogleOAuthStatus();
+    return sendSuccess(res, payload);
+  } catch (error) {
+    return sendError(res, error.message, error.code || 'GOOGLE_OAUTH_FAILED', error.status || 500);
+  }
+};
+
+export const refreshOAuth = async (req, res) => {
+  try {
+    const payload = await refreshGoogleOAuth();
+    return sendSuccess(res, payload);
+  } catch (error) {
+    return sendError(res, error.message, error.code || 'GOOGLE_OAUTH_FAILED', error.status || 500);
+  }
+};
+
+export const revokeOAuth = async (req, res) => {
+  try {
+    const payload = await revokeGoogleOAuth();
+    return sendSuccess(res, payload);
+  } catch (error) {
+    return sendError(res, error.message, error.code || 'GOOGLE_OAUTH_FAILED', error.status || 500);
   }
 };
