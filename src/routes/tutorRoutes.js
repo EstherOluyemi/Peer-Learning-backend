@@ -79,6 +79,16 @@ router.route('/sessions')
 router.route('/sessions/requests')
   .get(getSessionRequests);
 
+// Support both /sessions/requests/:id and /sessions/:sid/requests/:id
+router.post('/sessions/requests/:requestId/approve', approveSessionRequest);
+router.post('/sessions/requests/:requestId/reject', rejectSessionRequest);
+
+// Fallback routes tried by frontend
+router.post('/requests/:requestId/approve', approveSessionRequest);
+router.post('/requests/:requestId/reject', rejectSessionRequest);
+router.post('/enrollments/requests/:requestId/approve', approveSessionRequest);
+router.post('/enrollments/requests/:requestId/reject', rejectSessionRequest);
+
 router.route('/sessions/:sessionId/requests')
   .get(getSessionRequests);
 

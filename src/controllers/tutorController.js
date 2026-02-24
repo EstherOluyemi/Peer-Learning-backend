@@ -211,15 +211,18 @@ export const getSessionRequests = async (req, res) => {
 
 export const approveSessionRequest = async (req, res) => {
   try {
-    const session = await Session.findOne({ _id: req.params.sessionId, tutorId: req.tutor._id });
-    if (!session) return sendError(res, 'Session not found', 'SESSION_NOT_FOUND', 404);
+    const { sessionId, requestId } = req.params;
 
-    const request = await SessionJoinRequest.findOne({
-      _id: req.params.requestId,
-      sessionId: session._id
-    });
+    // 1. Find the request first to get sessionId if it's missing from params
+    const request = await SessionJoinRequest.findById(requestId);
     if (!request) return sendError(res, 'Join request not found', 'REQUEST_NOT_FOUND', 404);
 
+    // 2. Verify session ownership (either using provided sessionId or request.sessionId)
+    const sid = sessionId || request.sessionId;
+    const session = await Session.findOne({ _id: sid, tutorId: req.tutor._id });
+    if (!session) return sendError(res, 'Session not found or access denied', 'SESSION_NOT_FOUND', 404);
+
+    // 3. Perform business logic
     const isStudent = (session.studentIds || []).some(id => id.toString() === request.learnerId.toString());
     if (!isStudent && session.maxParticipants && session.studentIds.length >= session.maxParticipants) {
       return sendError(res, 'Session is full', 'SESSION_FULL', 409);
@@ -242,15 +245,18 @@ export const approveSessionRequest = async (req, res) => {
 
 export const rejectSessionRequest = async (req, res) => {
   try {
-    const session = await Session.findOne({ _id: req.params.sessionId, tutorId: req.tutor._id });
-    if (!session) return sendError(res, 'Session not found', 'SESSION_NOT_FOUND', 404);
+    const { sessionId, requestId } = req.params;
 
-    const request = await SessionJoinRequest.findOne({
-      _id: req.params.requestId,
-      sessionId: session._id
-    });
+    // 1. Find the request
+    const request = await SessionJoinRequest.findById(requestId);
     if (!request) return sendError(res, 'Join request not found', 'REQUEST_NOT_FOUND', 404);
 
+    // 2. Verify session ownership
+    const sid = sessionId || request.sessionId;
+    const session = await Session.findOne({ _id: sid, tutorId: req.tutor._id });
+    if (!session) return sendError(res, 'Session not found or access denied', 'SESSION_NOT_FOUND', 404);
+
+    // 3. Remove from studentIds if they were there (just in case)
     session.studentIds = (session.studentIds || []).filter(
       id => id.toString() !== request.learnerId.toString()
     );

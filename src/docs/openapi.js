@@ -547,6 +547,32 @@ export default {
         }
       }
     },
+    '/v1/tutor/sessions/requests/{requestId}/approve': {
+      post: {
+        tags: ['Tutor Sessions'],
+        summary: 'Approve join request (no sessionId needed)',
+        security: [{ bearerAuth: [], cookieAuth: [] }],
+        parameters: [
+          { name: 'requestId', in: 'path', required: true, schema: { type: 'string' } }
+        ],
+        responses: {
+          200: { description: 'Approved', content: { 'application/json': { schema: { $ref: '#/components/schemas/SuccessResponse' } } } }
+        }
+      }
+    },
+    '/v1/tutor/sessions/requests/{requestId}/reject': {
+      post: {
+        tags: ['Tutor Sessions'],
+        summary: 'Reject join request (no sessionId needed)',
+        security: [{ bearerAuth: [], cookieAuth: [] }],
+        parameters: [
+          { name: 'requestId', in: 'path', required: true, schema: { type: 'string' } }
+        ],
+        responses: {
+          200: { description: 'Rejected', content: { 'application/json': { schema: { $ref: '#/components/schemas/SuccessResponse' } } } }
+        }
+      }
+    },
     '/v1/tutor/sessions/{sessionId}/requests': {
       get: {
         tags: ['Tutor Sessions'],
