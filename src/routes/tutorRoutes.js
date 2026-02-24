@@ -74,6 +74,11 @@ router.route('/sessions')
   .get(getSessions)
   .post(createSession);
 
+// Join Requests review for tutors
+// MUST be defined before /sessions/:id
+router.route('/sessions/requests')
+  .get(getSessionRequests);
+
 router.route('/sessions/:sessionId/requests')
   .get(getSessionRequests);
 

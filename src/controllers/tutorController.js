@@ -171,17 +171,34 @@ export const deleteSession = async (req, res) => {
 
 export const getSessionRequests = async (req, res) => {
   try {
-    const session = await Session.findOne({ _id: req.params.sessionId, tutorId: req.tutor._id });
-    if (!session) return sendError(res, 'Session not found', 'SESSION_NOT_FOUND', 404);
+    // If sessionId is provided, filter by it, otherwise get all requests for tutor's sessions
+    const { sessionId } = req.params;
+    const { status } = req.query;
 
-    const requests = await SessionJoinRequest.find({ sessionId: session._id })
+    let sessionIds = [];
+    if (sessionId) {
+      const session = await Session.findOne({ _id: sessionId, tutorId: req.tutor._id });
+      if (!session) return sendError(res, 'Session not found', 'SESSION_NOT_FOUND', 404);
+      sessionIds = [session._id];
+    } else {
+      const sessions = await Session.find({ tutorId: req.tutor._id }).select('_id');
+      sessionIds = sessions.map(s => s._id);
+    }
+
+    const query = { sessionId: { $in: sessionIds } };
+    if (status) query.status = status;
+
+    const requests = await SessionJoinRequest.find(query)
       .populate('learnerId', 'name email')
+      .populate('sessionId', 'title startTime')
       .sort({ createdAt: -1 });
 
     const data = requests.map(request => ({
       requestId: request._id,
-      sessionId: request.sessionId,
+      sessionId: request.sessionId?._id || request.sessionId,
+      sessionTitle: request.sessionId?.title,
       learnerId: request.learnerId?._id || request.learnerId,
+      learnerName: request.learnerId?.name,
       status: request.status,
       createdAt: request.createdAt
     }));

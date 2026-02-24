@@ -534,6 +534,19 @@ export default {
         }
       }
     },
+    '/v1/tutor/sessions/requests': {
+      get: {
+        tags: ['Tutor Sessions'],
+        summary: 'List all session join requests for tutor',
+        security: [{ bearerAuth: [], cookieAuth: [] }],
+        parameters: [
+          { name: 'status', in: 'query', schema: { type: 'string', enum: ['pending', 'approved', 'rejected'] } }
+        ],
+        responses: {
+          200: { description: 'Requests', content: { 'application/json': { schema: { $ref: '#/components/schemas/SuccessResponse' } } } }
+        }
+      }
+    },
     '/v1/tutor/sessions/{sessionId}/requests': {
       get: {
         tags: ['Tutor Sessions'],
