@@ -23,7 +23,8 @@ const allowedOrigins = [
   process.env.FRONTEND_URL, 
   'http://localhost:5173', 
   'http://localhost:5174',
-  'https://v0-peer-learning-system.vercel.app/'
+  'https://v0-peer-learning-system.vercel.app',
+  'https://peer-learning-system.onrender.com'
 ];
 
 app.use(cors({
