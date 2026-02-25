@@ -51,7 +51,7 @@ export const registerTutor = async (req, res) => {
     res.cookie('token', token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
       maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
     });
 
@@ -63,7 +63,8 @@ export const registerTutor = async (req, res) => {
         bio: tutor.bio,
         subjects: tutor.subjects,
         hourlyRate: tutor.hourlyRate
-      }
+      },
+      token // Return token for frontend localStorage fallback
     }, 201);
   } catch (error) {
     return sendError(res, error.message, 'REGISTRATION_FAILED', 500);
@@ -86,7 +87,7 @@ export const loginTutor = async (req, res) => {
       res.cookie('token', token, {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict',
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
         maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
       });
 
@@ -98,7 +99,8 @@ export const loginTutor = async (req, res) => {
           bio: tutor.bio,
           subjects: tutor.subjects,
           hourlyRate: tutor.hourlyRate
-        }
+        },
+        token // Return token for frontend localStorage fallback
       });
     } else {
       return sendError(res, 'Invalid email or password', 'INVALID_CREDENTIALS', 401);

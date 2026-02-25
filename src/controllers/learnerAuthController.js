@@ -48,7 +48,7 @@ export const registerLearner = async (req, res) => {
     res.cookie('token', token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
       maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
     });
 
@@ -59,7 +59,8 @@ export const registerLearner = async (req, res) => {
         email: user.email,
         role: user.role,
         interests: learnerProfile.interests
-      }
+      },
+      token // Return token for frontend localStorage fallback
     }, 201);
   } catch (error) {
     return sendError(res, error.message, 'REGISTRATION_FAILED', 500);
@@ -72,12 +73,17 @@ export const loginLearner = async (req, res) => {
 
     const user = await User.findOne({ email });
     if (user && (await user.comparePassword(password))) {
+      // Prevent tutors from logging in as learners
+      if (user.role !== 'student') {
+        return sendError(res, 'Not authorized as a learner', 'NOT_A_LEARNER', 403);
+      }
+
       const token = generateToken(user._id);
 
       res.cookie('token', token, {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict',
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
         maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
       });
 
@@ -87,7 +93,8 @@ export const loginLearner = async (req, res) => {
           name: user.name,
           email: user.email,
           role: user.role
-        }
+        },
+        token // Return token for frontend localStorage fallback
       });
     } else {
       return sendError(res, 'Invalid email or password', 'INVALID_CREDENTIALS', 401);
