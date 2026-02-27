@@ -274,12 +274,47 @@ export const rejectSessionRequest = async (req, res) => {
 // --- Student Management ---
 export const getMyStudents = async (req, res) => {
   try {
-    const sessions = await Session.find({ tutorId: req.tutor._id }).populate('studentIds', 'name email');
+    const sessions = await Session.find({ tutorId: req.tutor._id })
+      .populate('studentIds', 'name email avatar')
+      .populate('courseId', 'title subject level')
+      .sort({ startTime: -1 });
+
+    // Build a map: studentId -> { student info, sessions[] }
     const studentsMap = new Map();
 
     sessions.forEach(session => {
+      const sessionSummary = {
+        sessionId: session._id,
+        title: session.title,
+        subject: session.subject,
+        status: session.status,
+        startTime: session.startTime,
+        endTime: session.endTime,
+        meetingLink: session.meetingLink || null,
+        course: session.courseId
+          ? { id: session.courseId._id, title: session.courseId.title, level: session.courseId.level }
+          : null
+      };
+
       session.studentIds.forEach(student => {
-        studentsMap.set(student._id.toString(), student);
+        const key = student._id.toString();
+        if (!studentsMap.has(key)) {
+          studentsMap.set(key, {
+            _id: student._id,
+            name: student.name,
+            email: student.email,
+            avatar: student.avatar || null,
+            sessions: [],
+            totalSessions: 0,
+            completedSessions: 0,
+            upcomingSessions: 0
+          });
+        }
+        const entry = studentsMap.get(key);
+        entry.sessions.push(sessionSummary);
+        entry.totalSessions += 1;
+        if (session.status === 'completed') entry.completedSessions += 1;
+        if (session.status === 'scheduled' || session.status === 'ongoing') entry.upcomingSessions += 1;
       });
     });
 
@@ -292,15 +327,41 @@ export const getMyStudents = async (req, res) => {
 export const getStudentProgress = async (req, res) => {
   try {
     const { studentId } = req.params;
+
+    // Verify the student is actually enrolled in one of this tutor's sessions
+    const student = await User.findById(studentId).select('name email avatar');
+    if (!student) return sendError(res, 'Student not found', 'STUDENT_NOT_FOUND', 404);
+
     const sessions = await Session.find({
       tutorId: req.tutor._id,
       studentIds: studentId
-    }).populate('courseId');
+    })
+      .populate('courseId', 'title subject level price')
+      .sort({ startTime: -1 });
+
+    const sessionHistory = sessions.map(session => ({
+      sessionId: session._id,
+      title: session.title,
+      subject: session.subject,
+      status: session.status,
+      startTime: session.startTime,
+      endTime: session.endTime,
+      meetingLink: session.meetingLink || null,
+      course: session.courseId
+        ? { id: session.courseId._id, title: session.courseId.title, level: session.courseId.level }
+        : null
+    }));
+
+    const totalSessions = sessions.length;
+    const completedSessions = sessions.filter(s => s.status === 'completed').length;
+    const upcomingSessions = sessions.filter(s => s.status === 'scheduled' || s.status === 'ongoing').length;
 
     return sendSuccess(res, {
-      studentId,
-      sessionHistory: sessions,
-      totalSessions: sessions.length
+      student,
+      sessionHistory,
+      totalSessions,
+      completedSessions,
+      upcomingSessions
     });
   } catch (error) {
     return sendError(res, error.message, 'FETCH_PROGRESS_FAILED', 500);
