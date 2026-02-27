@@ -1,3 +1,4 @@
+// src/controllers/learnerAuthController.js
 import User from '../models/User.js';
 import LearnerProfile from '../models/LearnerProfile.js';
 import jwt from 'jsonwebtoken';
@@ -13,7 +14,6 @@ export const registerLearner = async (req, res) => {
   try {
     const { name, email, password, interests } = req.body;
 
-    // Validate required fields and show only missing ones
     const requiredFields = ['name', 'email', 'password'];
     const missingFields = requiredFields.filter(field => !req.body[field]);
 
@@ -49,18 +49,18 @@ export const registerLearner = async (req, res) => {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-      maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
+      maxAge: 30 * 24 * 60 * 60 * 1000
     });
 
     return sendSuccess(res, {
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        interests: learnerProfile.interests
-      },
-      token // Return token for frontend localStorage fallback
+      // Consistent shape with tutor response — _id is always the User._id
+      _id: user._id,
+      id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      interests: learnerProfile.interests,
+      token
     }, 201);
   } catch (error) {
     return sendError(res, error.message, 'REGISTRATION_FAILED', 500);
@@ -73,7 +73,6 @@ export const loginLearner = async (req, res) => {
 
     const user = await User.findOne({ email });
     if (user && (await user.comparePassword(password))) {
-      // Prevent tutors from logging in as learners
       if (user.role !== 'student') {
         return sendError(res, 'Not authorized as a learner', 'NOT_A_LEARNER', 403);
       }
@@ -84,17 +83,17 @@ export const loginLearner = async (req, res) => {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
         sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-        maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
+        maxAge: 30 * 24 * 60 * 60 * 1000
       });
 
       return sendSuccess(res, {
-        user: {
-          id: user._id,
-          name: user.name,
-          email: user.email,
-          role: user.role
-        },
-        token // Return token for frontend localStorage fallback
+        // Consistent shape with tutor response — _id is always the User._id
+        _id: user._id,
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        token
       });
     } else {
       return sendError(res, 'Invalid email or password', 'INVALID_CREDENTIALS', 401);

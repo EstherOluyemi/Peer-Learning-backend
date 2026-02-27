@@ -14,7 +14,6 @@ export const registerTutor = async (req, res) => {
   try {
     const { name, email, password, bio, subjects, hourlyRate } = req.body;
 
-    // Validate required fields and show only missing ones
     const requiredFields = ['name', 'email', 'password'];
     const missingFields = requiredFields.filter(field => !req.body[field]);
 
@@ -52,19 +51,23 @@ export const registerTutor = async (req, res) => {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-      maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
+      maxAge: 30 * 24 * 60 * 60 * 1000
     });
 
     return sendSuccess(res, {
-      tutor: {
-        id: tutor._id,
-        name: user.name,
-        email: user.email,
-        bio: tutor.bio,
-        subjects: tutor.subjects,
-        hourlyRate: tutor.hourlyRate
-      },
-      token // Return token for frontend localStorage fallback
+      // FIX: always expose the User._id as _id so the frontend
+      // identity matches req.user._id (decoded from JWT) on every API call.
+      _id: user._id,
+      id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      // Tutor-specific extras (non-identity fields)
+      tutorId: tutor._id,
+      bio: tutor.bio,
+      subjects: tutor.subjects,
+      hourlyRate: tutor.hourlyRate,
+      token
     }, 201);
   } catch (error) {
     return sendError(res, error.message, 'REGISTRATION_FAILED', 500);
@@ -88,19 +91,23 @@ export const loginTutor = async (req, res) => {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
         sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-        maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
+        maxAge: 30 * 24 * 60 * 60 * 1000
       });
 
       return sendSuccess(res, {
-        tutor: {
-          id: tutor._id,
-          name: user.name,
-          email: user.email,
-          bio: tutor.bio,
-          subjects: tutor.subjects,
-          hourlyRate: tutor.hourlyRate
-        },
-        token // Return token for frontend localStorage fallback
+        // FIX: always expose the User._id as _id so the frontend
+        // identity matches req.user._id (decoded from JWT) on every API call.
+        _id: user._id,
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        // Tutor-specific extras (non-identity fields)
+        tutorId: tutor._id,
+        bio: tutor.bio,
+        subjects: tutor.subjects,
+        hourlyRate: tutor.hourlyRate,
+        token
       });
     } else {
       return sendError(res, 'Invalid email or password', 'INVALID_CREDENTIALS', 401);
