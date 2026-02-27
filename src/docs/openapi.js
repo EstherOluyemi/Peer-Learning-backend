@@ -29,7 +29,8 @@ export default {
     { name: 'Learner Progress' },
     { name: 'Learner Sessions' },
     { name: 'Learner Assessments' },
-    { name: 'Learner Interaction' }
+    { name: 'Learner Interaction' },
+    { name: 'Chat' }
   ],
   components: {
     securitySchemes: {
@@ -246,6 +247,20 @@ export default {
           lastUsedAt: { type: 'string', format: 'date-time' },
           invalidatedAt: { type: 'string', format: 'date-time' },
           calendarEventId: { type: 'string' }
+        }
+      },
+      CreateConversationRequest: {
+        type: 'object',
+        required: ['recipientId'],
+        properties: {
+          recipientId: { type: 'string' }
+        }
+      },
+      SendMessageRequest: {
+        type: 'object',
+        required: ['text'],
+        properties: {
+          text: { type: 'string' }
         }
       }
     }
@@ -858,6 +873,92 @@ export default {
         responses: {
           200: { description: 'Left session', content: { 'application/json': { schema: { $ref: '#/components/schemas/SuccessResponse' } } } },
           404: { description: 'Not found', content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+        }
+      }
+    },
+    '/v1/learner/messages/{userId}': {
+      get: {
+        tags: ['Learner Interaction'],
+        summary: 'Get messages (legacy)',
+        security: [{ bearerAuth: [], cookieAuth: [] }],
+        parameters: [
+          { name: 'userId', in: 'path', required: true, schema: { type: 'string' } }
+        ],
+        responses: {
+          200: { description: 'Messages list', content: { 'application/json': { schema: { $ref: '#/components/schemas/SuccessResponse' } } } }
+        }
+      }
+    },
+    '/v1/chat/contacts': {
+      get: {
+        tags: ['Chat'],
+        summary: 'Get chat contacts for current user',
+        security: [{ bearerAuth: [], cookieAuth: [] }],
+        responses: {
+          200: { description: 'Contacts list', content: { 'application/json': { schema: { $ref: '#/components/schemas/SuccessResponse' } } } }
+        }
+      }
+    },
+    '/v1/chat/conversations': {
+      get: {
+        tags: ['Chat'],
+        summary: 'Get all conversations',
+        security: [{ bearerAuth: [], cookieAuth: [] }],
+        responses: {
+          200: { description: 'Conversations list', content: { 'application/json': { schema: { $ref: '#/components/schemas/SuccessResponse' } } } }
+        }
+      },
+      post: {
+        tags: ['Chat'],
+        summary: 'Create or get a 1-to-1 conversation',
+        security: [{ bearerAuth: [], cookieAuth: [] }],
+        requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/CreateConversationRequest' } } } },
+        responses: {
+          200: { description: 'Existing conversation', content: { 'application/json': { schema: { $ref: '#/components/schemas/SuccessResponse' } } } },
+          201: { description: 'New conversation created', content: { 'application/json': { schema: { $ref: '#/components/schemas/SuccessResponse' } } } }
+        }
+      }
+    },
+    '/v1/chat/conversations/{conversationId}/messages': {
+      get: {
+        tags: ['Chat'],
+        summary: 'Get paginated messages for a conversation',
+        security: [{ bearerAuth: [], cookieAuth: [] }],
+        parameters: [
+          { name: 'conversationId', in: 'path', required: true, schema: { type: 'string' } },
+          { name: 'page', in: 'query', schema: { type: 'integer', default: 1 } },
+          { name: 'limit', in: 'query', schema: { type: 'integer', default: 50 } }
+        ],
+        responses: {
+          200: { description: 'Paginated messages', content: { 'application/json': { schema: { $ref: '#/components/schemas/SuccessResponse' } } } },
+          403: { description: 'Forbidden', content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } } },
+          404: { description: 'Conversation not found', content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+        }
+      },
+      post: {
+        tags: ['Chat'],
+        summary: 'Send a message (HTTP fallback)',
+        security: [{ bearerAuth: [], cookieAuth: [] }],
+        parameters: [
+          { name: 'conversationId', in: 'path', required: true, schema: { type: 'string' } }
+        ],
+        requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/SendMessageRequest' } } } },
+        responses: {
+          201: { description: 'Message sent', content: { 'application/json': { schema: { $ref: '#/components/schemas/SuccessResponse' } } } },
+          400: { description: 'Validation error', content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+        }
+      }
+    },
+    '/v1/chat/conversations/{conversationId}/read': {
+      patch: {
+        tags: ['Chat'],
+        summary: 'Mark all messages in a conversation as read',
+        security: [{ bearerAuth: [], cookieAuth: [] }],
+        parameters: [
+          { name: 'conversationId', in: 'path', required: true, schema: { type: 'string' } }
+        ],
+        responses: {
+          200: { description: 'Marked read', content: { 'application/json': { schema: { $ref: '#/components/schemas/SuccessResponse' } } } }
         }
       }
     },
