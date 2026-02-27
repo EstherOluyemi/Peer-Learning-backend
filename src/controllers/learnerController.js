@@ -22,6 +22,8 @@ import Message from '../models/Message.js';
 import LearnerProfile from '../models/LearnerProfile.js';
 import Session from '../models/Session.js';
 import SessionJoinRequest from '../models/SessionJoinRequest.js';
+import Review from '../models/Review.js';
+import Tutor from '../models/Tutor.js';
 import { sendSuccess, sendError } from '../middleware/responseHandler.js';
 
 const buildSessionResponse = (session) => {
@@ -94,7 +96,7 @@ export const enrollInCourse = async (req, res) => {
     }
 
     const enrollment = await Enrollment.create({ learnerId, courseId });
-    
+
     // Create initial progress
     await Progress.create({ learnerId, courseId });
 
@@ -124,10 +126,10 @@ export const updateProgress = async (req, res) => {
   try {
     const { courseId } = req.params;
     const { moduleId } = req.body;
-    
+
     const progress = await Progress.findOneAndUpdate(
       { learnerId: req.user._id, courseId },
-      { 
+      {
         $addToSet: { completedModules: moduleId },
         lastAccessed: new Date()
       },
@@ -135,7 +137,7 @@ export const updateProgress = async (req, res) => {
     );
 
     if (!progress) return sendError(res, 'Progress record not found', 'PROGRESS_NOT_FOUND', 404);
-    
+
     return sendSuccess(res, progress);
   } catch (error) {
     return sendError(res, error.message, 'UPDATE_PROGRESS_FAILED', 500);
@@ -413,5 +415,75 @@ export const sendMessage = async (req, res) => {
     return sendSuccess(res, newMessage, 201);
   } catch (error) {
     return sendError(res, error.message, 'SEND_MESSAGE_FAILED', 500);
+  }
+};
+
+// --- Session Rating ---
+export const rateSession = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const learnerId = req.user._id;
+    const { rating, comment } = req.body;
+
+    // Validate rating
+    const ratingNum = Number(rating);
+    if (!Number.isInteger(ratingNum) || ratingNum < 1 || ratingNum > 5) {
+      return sendError(res, 'Rating must be an integer between 1 and 5', 'INVALID_RATING', 400);
+    }
+
+    // Find session
+    const session = await Session.findById(sessionId);
+    if (!session) return sendError(res, 'Session not found', 'SESSION_NOT_FOUND', 404);
+
+    // Confirm learner is a participant
+    const isParticipant = (session.studentIds || []).some(id => id.toString() === learnerId.toString());
+    if (!isParticipant) {
+      return sendError(res, 'You are not a participant of this session', 'NOT_SESSION_PARTICIPANT', 403);
+    }
+
+    // Check for existing review for this tutor by this learner
+    const existingReview = await Review.findOne({ tutorId: session.tutorId, studentId: learnerId });
+    if (existingReview) {
+      return sendError(res, 'You have already reviewed this tutor', 'TUTOR_ALREADY_REVIEWED', 409);
+    }
+
+    // Create the review
+    const review = await Review.create({
+      tutorId: session.tutorId,
+      studentId: learnerId,
+      rating: ratingNum,
+      comment: comment || ''
+    });
+
+    // Recalculate tutor aggregate rating
+    const stats = await Review.aggregate([
+      { $match: { tutorId: session.tutorId } },
+      { $group: { _id: '$tutorId', avgRating: { $avg: '$rating' }, count: { $sum: 1 } } }
+    ]);
+    if (stats.length > 0) {
+      await Tutor.findByIdAndUpdate(session.tutorId, {
+        rating: Math.round(stats[0].avgRating * 10) / 10,
+        reviewCount: stats[0].count
+      });
+    }
+
+    return sendSuccess(res, review, 201);
+  } catch (error) {
+    return sendError(res, error.message, 'RATE_SESSION_FAILED', 500);
+  }
+};
+
+export const getSessionRating = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const learnerId = req.user._id;
+
+    const session = await Session.findById(sessionId);
+    if (!session) return sendError(res, 'Session not found', 'SESSION_NOT_FOUND', 404);
+
+    const review = await Review.findOne({ tutorId: session.tutorId, studentId: learnerId });
+    return sendSuccess(res, review || null);
+  } catch (error) {
+    return sendError(res, error.message, 'FETCH_RATING_FAILED', 500);
   }
 };

@@ -16,7 +16,9 @@ import {
   submitAssessment,
   getPeers,
   sendMessage,
-  getMessages
+  getMessages,
+  rateSession,
+  getSessionRating
 } from '../controllers/learnerController.js';
 import { protect, learnerOnly } from '../middleware/authMiddleware.js';
 
@@ -50,6 +52,11 @@ router.route('/sessions')
 
 router.route('/sessions/browse')
   .get(browseSessions);
+
+// Rating must come before the generic :sessionId route so Express matches correctly
+router.route('/sessions/:sessionId/rate')
+  .get(getSessionRating)
+  .post(rateSession);
 
 router.route('/sessions/:sessionId')
   .get(getSessionDetails);
